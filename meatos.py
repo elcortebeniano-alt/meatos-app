@@ -14,44 +14,42 @@ st.set_page_config(
     initial_sidebar_state="collapsed" # Arranca cerrado en móvil para ahorrar espacio
 )
 
-# --- ESTILOS CSS (CORREGIDO PARA VER EL MENÚ EN CELULAR) ---
+# --- ESTILOS CSS (MODO BLINDADO PARA MÓVIL) ---
 st.markdown("""
 <style>
-    /* 1. FORZAR VISIBILIDAD DE LA BARRA SUPERIOR */
-    header {
-        visibility: visible !important;
+    /* 1. BAJAR TODO EL CONTENIDO A LA FUERZA */
+    /* Empujamos todo 80 pixeles hacia abajo para dejar libre el techo */
+    .block-container {
+        padding-top: 80px !important; 
+        padding-bottom: 2rem !important;
     }
-    
-    [data-testid="stHeader"] {
+
+    /* 2. BARRA SUPERIOR SIEMPRE VISIBLE */
+    header[data-testid="stHeader"] {
         visibility: visible !important;
         background-color: transparent !important;
-        z-index: 999999 !important; /* ¡ESTO ES LA CLAVE! Pone el menú encima de todo */
+        z-index: 99999 !important; /* Capa superior */
+        height: auto !important;
     }
 
-    /* 2. EL BOTÓN DE ABRIR MENÚ (LA FLECHITA O HAMBURGUESA) */
+    /* 3. EL BOTÓN DE LA FLECHITA (COLLAPSED CONTROL) */
     [data-testid="collapsedControl"] {
-        visibility: visible !important;
         display: block !important;
-        color: #8B0000 !important; /* Rojo para que lo veas bien */
-    }
-    
-    /* También forzamos el icono del menú de hamburguesa si aparece ese */
-    [data-testid="stDecoration"] {
         visibility: visible !important;
-        z-index: 999999 !important;
+        color: #8B0000 !important; /* Flecha ROJA */
+        background-color: rgba(255, 255, 255, 0.9) !important; /* Fondo blanquito para que resalte */
+        border-radius: 50% !important; /* Redondo */
+        width: 40px !important;
+        height: 40px !important;
+        z-index: 1000000 !important; /* Encima de todo lo demás */
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2) !important; /* Sombrita para verlo mejor */
     }
 
-    /* 3. BAJAR EL CONTENIDO PARA QUE NO TAPE EL MENÚ */
-    .block-container {
-        padding-top: 5rem !important; /* Mucho espacio arriba para que no estorbe */
-        padding-bottom: 1rem;
-    }
-    
-    /* Ocultar pie de página */
+    /* 4. Ocultar footer y menú de 3 puntos si molesta, pero dejamos la flecha */
     footer {visibility: hidden;}
     #MainMenu {visibility: visible;} 
 
-    /* ESTILOS GENERALES (Botones, Tarjetas) */
+    /* ESTILOS GENERALES (Tus botones y tarjetas) */
     .stButton>button {font-weight: bold; border-radius: 8px; height: 3em; width: 100%;}
     button[kind="primary"] {background-color: #8B0000 !important; color: white !important; border: none !important;}
     button[kind="primary"]:hover {background-color: #A52A2A !important; box-shadow: 0 4px 8px rgba(0,0,0,0.2);}
@@ -64,7 +62,6 @@ st.markdown("""
         border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%;
         font-size: 1.1rem; transition: transform 0.1s;
     }
-    .btn-whatsapp:hover { background-color: #128C7E; color: white !important; transform: scale(1.02);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -470,4 +467,5 @@ if st.session_state['admin_mode']:
                 st.rerun() 
             else:
                 st.warning("Selecciona 'Todo el Historial' para editar.")
+
 
