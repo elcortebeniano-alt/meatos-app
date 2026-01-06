@@ -6,26 +6,24 @@ import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- CONFIGURACIÓN DE PÁGINA (ESTÁNDAR) ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="El Corte Beniano | POS", 
     layout="wide", 
     page_icon="🥩",
-    initial_sidebar_state="expanded" # Forzamos que arranque abierto
+    initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS (SOLO COLORES, NADA DE LAYOUT) ---
+# --- ESTILOS CSS (CORRECCIÓN DE CONTRASTE PARA MODO OSCURO) ---
 st.markdown("""
 <style>
-    /* 1. SOLO CAMBIAMOS COLORES DE BOTONES */
+    /* 1. BOTONES */
     .stButton>button {
         font-weight: bold; 
         border-radius: 8px; 
         height: 3em; 
         width: 100%;
     }
-    
-    /* Botón Rojo Corporativo */
     button[kind="primary"] {
         background-color: #8B0000 !important; 
         color: white !important; 
@@ -36,15 +34,24 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
-    /* 2. TARJETAS DE DATOS */
+    /* 2. TARJETAS DE DATOS (PRECIO, STOCK, ARQUEO) */
+    /* Aquí estaba el problema. Ahora forzamos el color del texto. */
     div[data-testid="stMetric"] {
-        border: 1px solid #cccccc; 
-        padding: 10px; 
-        border-radius: 8px; 
+        background-color: #f0f2f6 !important; /* Fondo Gris Claro */
+        border: 1px solid #d0d0d0;
+        padding: 10px;
+        border-radius: 8px;
         text-align: center;
-        background-color: #f9f9f9;
     }
-    
+
+    /* FORZAR TEXTO NEGRO EN LAS TARJETAS (Para que se vea en Modo Oscuro) */
+    div[data-testid="stMetricLabel"] p {
+        color: #000000 !important; /* Título en Negro */
+    }
+    div[data-testid="stMetricValue"] div {
+        color: #000000 !important; /* Número en Negro */
+    }
+
     /* 3. BOTÓN WHATSAPP */
     .btn-whatsapp {
         display: inline-flex; align-items: center; justify-content: center;
@@ -54,12 +61,10 @@ st.markdown("""
         font-size: 1.1rem; margin-top: 10px;
     }
     .btn-whatsapp:hover { background-color: #128C7E; color: white !important;}
-
-    /* NOTA: He borrado todas las líneas que ocultaban header, footer o main menu */
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXIÓN HÍBRIDA ---
+# --- CONEXIÓN ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
@@ -77,7 +82,7 @@ def conectar_google_sheets():
         else:
             return None
     except Exception as e:
-        st.error(f"Error conectando a Google: {e}")
+        st.error(f"Error Google: {e}")
         return None
 
 # Funciones Auxiliares
@@ -95,7 +100,7 @@ def cargar_data(sheet, nombre_hoja, columnas):
         worksheet.append_row(columnas)
         return pd.DataFrame(columns=columnas)
     except Exception as e:
-        st.error(f"Error leyendo {nombre_hoja}: {e}")
+        st.error(f"Error {nombre_hoja}: {e}")
         return pd.DataFrame(columns=columnas)
 
 def guardar_data(sheet, nombre_hoja, df):
@@ -104,9 +109,9 @@ def guardar_data(sheet, nombre_hoja, df):
         worksheet.clear()
         worksheet.update([df.columns.values.tolist()] + df.values.tolist())
     except Exception as e:
-        st.error(f"Error guardando en {nombre_hoja}: {e}")
+        st.error(f"Error guardando {nombre_hoja}: {e}")
 
-# --- INICIALIZACIÓN ---
+# --- INICIO ---
 if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = conectar_google_sheets()
 sheet = st.session_state['sheet_obj']
 
@@ -129,7 +134,7 @@ def limpiar_fechas(df):
 st.session_state['finanzas'] = limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = limpiar_fechas(st.session_state['detalles'])
 
-# --- SIDEBAR (PANEL IZQUIERDO) ---
+# --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists("Logo-Final.png"):
         st.image("Logo-Final.png", use_container_width=True)
@@ -156,9 +161,9 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.5 | Modo Nativo")
+    st.caption("MeatOS v3.6 | Dark Mode Fix")
 
-# --- INTERFAZ PRINCIPAL ---
+# --- APP ---
 tab1, tab2, tab3 = None, None, None
 if st.session_state['admin_mode']:
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
