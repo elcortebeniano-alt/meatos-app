@@ -14,12 +14,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS (CORREGIDO: BARRA SUPERIOR VISIBLE PARA MÓVIL) ---
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
+    /* Ocultamos menú hamburguesa y pie de página, PERO DEJAMOS EL HEADER */
+    #MainMenu {visibility: visible;} /* Dejar visible para opciones de usuario */
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    
+    /* ELIMINADA LA LÍNEA QUE OCULTABA EL HEADER PARA PODER ABRIR EL MENÚ EN MÓVIL */
+    /* header {visibility: hidden;} <--- ESTA ERA LA CULPABLE */
+
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
     
     .stButton>button {font-weight: bold; border-radius: 8px; height: 3em; width: 100%;}
@@ -39,35 +43,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXIÓN HÍBRIDA (LOCAL + NUBE) ---
+# --- CONEXIÓN HÍBRIDA ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
 def conectar_google_sheets():
-    """Conecta usando archivo local JSON o Secretos de Streamlit Cloud"""
     try:
-        # 1. Intenta buscar archivo local (Para cuando trabajas en tu PC)
         if os.path.exists("credentials.json"):
             creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
             client = gspread.authorize(creds)
             return client.open("MeatOS_DB")
-        
-        # 2. Si no hay archivo, busca en los Secretos de la Nube (Para Streamlit Cloud)
         elif "gcp_service_account" in st.secrets:
-            # Crea un diccionario con la info de los secretos
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
             client = gspread.authorize(creds)
             return client.open("MeatOS_DB")
-            
         else:
-            st.error("⚠️ Error Fatal: No se encontró 'credentials.json' ni configuración de Secretos.")
+            st.error("⚠️ Error Fatal: No se encontraron credenciales.")
             return None
     except Exception as e:
         st.error(f"Error conectando a Google Sheets: {e}")
         return None
 
-# Funciones auxiliares
 def cargar_data(sheet, nombre_hoja, columnas):
     try:
         worksheet = sheet.worksheet(nombre_hoja)
@@ -93,10 +90,8 @@ def guardar_data(sheet, nombre_hoja, df):
     except Exception as e:
         st.error(f"Error guardando en {nombre_hoja}: {e}")
 
-# --- INICIO DE APP ---
-if 'sheet_obj' not in st.session_state:
-    st.session_state['sheet_obj'] = conectar_google_sheets()
-
+# --- INICIO ---
+if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = conectar_google_sheets()
 sheet = st.session_state['sheet_obj']
 
 if sheet:
@@ -120,7 +115,6 @@ st.session_state['detalles'] = limpiar_fechas(st.session_state['detalles'])
 
 # --- SIDEBAR ---
 with st.sidebar:
-    # Logo Logic para Nube (Busca archivo local primero)
     if os.path.exists("Logo-Final.png"):
         st.image("Logo-Final.png", use_container_width=True)
     elif os.path.exists("logo.png"):
@@ -137,7 +131,7 @@ with st.sidebar:
         password = st.text_input("🔑 Contraseña", type="password")
         if password == "2026": 
             st.session_state['admin_mode'] = True
-            st.success("Admin Conectado a Nube ☁️")
+            st.success("Admin Nube ☁️")
             st.markdown("---")
             if st.button("🔄 Forzar Sincronización"):
                 st.cache_resource.clear()
@@ -148,7 +142,7 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.1 | Cloud Ready")
+    st.caption("MeatOS v3.2 | Mobile Fix")
 
 # --- TABS ---
 tab1, tab2, tab3 = None, None, None
@@ -180,7 +174,7 @@ with tab1:
                 }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.toast(f"✅ Guardado en Nube: {monto_caja} Bs")
+                st.toast(f"✅ Guardado: {monto_caja} Bs")
                 time.sleep(0.5)
                 st.rerun()
 
