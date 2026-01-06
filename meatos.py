@@ -6,24 +6,18 @@ import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- CONFIGURACIÓN DE PÁGINA (ESTÁNDAR) ---
 st.set_page_config(
-    page_title="El Corte Beniano | Cloud POS", 
+    page_title="El Corte Beniano | POS", 
     layout="wide", 
     page_icon="🥩",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded" # Forzamos que arranque abierto
 )
 
-# --- ESTILOS CSS (LIMPIEZA TOTAL PARA FUNCIONALIDAD MÓVIL) ---
+# --- ESTILOS CSS (SOLO COLORES, NADA DE LAYOUT) ---
 st.markdown("""
 <style>
-    /* Eliminamos trucos raros. Dejamos que Streamlit controle el menú. */
-    /* Solo ajustamos colores de botones y métricas */
-    
-    .block-container {
-        padding-top: 2rem; /* Espacio estándar */
-    }
-    
+    /* 1. SOLO CAMBIAMOS COLORES DE BOTONES */
     .stButton>button {
         font-weight: bold; 
         border-radius: 8px; 
@@ -42,6 +36,7 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
+    /* 2. TARJETAS DE DATOS */
     div[data-testid="stMetric"] {
         border: 1px solid #cccccc; 
         padding: 10px; 
@@ -50,7 +45,7 @@ st.markdown("""
         background-color: #f9f9f9;
     }
     
-    /* Estilo botón WhatsApp */
+    /* 3. BOTÓN WHATSAPP */
     .btn-whatsapp {
         display: inline-flex; align-items: center; justify-content: center;
         background-color: #25D366; color: white !important; font-weight: bold;
@@ -59,35 +54,33 @@ st.markdown("""
         font-size: 1.1rem; margin-top: 10px;
     }
     .btn-whatsapp:hover { background-color: #128C7E; color: white !important;}
+
+    /* NOTA: He borrado todas las líneas que ocultaban header, footer o main menu */
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXIÓN HÍBRIDA (NUBE + LOCAL) ---
+# --- CONEXIÓN HÍBRIDA ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
 def conectar_google_sheets():
     try:
-        # Prioridad 1: Archivo local (Desarrollo en PC)
         if os.path.exists("credentials.json"):
             creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
             client = gspread.authorize(creds)
             return client.open("MeatOS_DB")
-        
-        # Prioridad 2: Secretos de Streamlit Cloud (Producción)
         elif "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
             client = gspread.authorize(creds)
             return client.open("MeatOS_DB")
         else:
-            st.error("⚠️ Error: No se encontraron credenciales (ni locales ni en secretos).")
             return None
     except Exception as e:
         st.error(f"Error conectando a Google: {e}")
         return None
 
-# Funciones de Datos
+# Funciones Auxiliares
 def cargar_data(sheet, nombre_hoja, columnas):
     try:
         worksheet = sheet.worksheet(nombre_hoja)
@@ -136,7 +129,7 @@ def limpiar_fechas(df):
 st.session_state['finanzas'] = limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = limpiar_fechas(st.session_state['detalles'])
 
-# --- BARRA LATERAL (SIDEBAR) ---
+# --- SIDEBAR (PANEL IZQUIERDO) ---
 with st.sidebar:
     if os.path.exists("Logo-Final.png"):
         st.image("Logo-Final.png", use_container_width=True)
@@ -153,8 +146,8 @@ with st.sidebar:
         password = st.text_input("🔑 Contraseña", type="password")
         if password == "2026": 
             st.session_state['admin_mode'] = True
-            st.success("Modo Gerente Activo")
-            if st.button("🔄 Sincronizar Nube"):
+            st.success("Gerente Activo")
+            if st.button("🔄 Refrescar Datos"):
                 st.cache_resource.clear()
                 st.rerun()
         else:
@@ -163,23 +156,21 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.4 | Estabilidad")
+    st.caption("MeatOS v3.5 | Modo Nativo")
 
-# --- PESTAÑAS PRINCIPALES ---
+# --- INTERFAZ PRINCIPAL ---
 tab1, tab2, tab3 = None, None, None
 if st.session_state['admin_mode']:
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
 else:
     tab1, = st.tabs(["🛒 PUNTO DE VENTA"])
 
-# ==============================================================================
-# TAB 1: PUNTO DE VENTA (POS)
-# ==============================================================================
+# TAB 1: CAJA
 with tab1:
     st.title("Caja Registradora")
     
-    # 1. Caja Chica (Gastos Rápidos)
-    with st.expander("💸 Operaciones de Caja (Gastos / Apertura)"):
+    # Caja Chica
+    with st.expander("💸 Gastos / Movimientos de Caja"):
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         opciones_caja = ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"]
         motivo_sel = c1.selectbox("Motivo", opciones_caja, label_visibility="collapsed")
@@ -197,13 +188,13 @@ with tab1:
                 }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("✅ Registrado")
-                time.sleep(1) # Espera para leer mensaje
+                st.success("✅ Movimiento Registrado")
+                time.sleep(1)
                 st.rerun()
 
     st.divider()
 
-    # 2. Venta
+    # Venta
     col_izq, col_der = st.columns([1.2, 1.8], gap="large")
 
     with col_izq:
@@ -219,7 +210,6 @@ with tab1:
                 df_filtrado = df_seguro[df_seguro['Producto'] == prod_sel]
                 data = df_filtrado.iloc[0]
                 
-                # Datos del producto
                 precio_base = float(data['PrecioVenta'])
                 costo_base = float(data.get('Costo', 0.0))
                 cat_base = str(data.get('Categoria', 'General'))
@@ -227,18 +217,13 @@ with tab1:
                 except: stock = 0.0
                 
                 with st.container(border=True):
-                    # Checkbox para modificar precio
-                    usar_precio_manual = st.checkbox("🔓 Modificar Precio Manualmente")
-                    if usar_precio_manual:
-                        precio_final = st.number_input("Nuevo Precio (Bs/Kg)", value=precio_base, step=0.5)
-                    else:
-                        precio_final = precio_base
+                    check_precio = st.checkbox("🔓 Modificar Precio")
+                    precio_final = st.number_input("Precio Venta (Bs/Kg)", value=precio_base, step=0.5) if check_precio else precio_base
                         
                     k1, k2 = st.columns(2)
                     k1.metric("Precio", f"{precio_final:.2f} Bs")
                     k2.metric("Stock Disp.", f"{stock:.3f} Kg")
 
-                # Ingreso de Peso
                 st.write("⚖️ **Peso en Gramos:**")
                 key_peso = f"peso_{st.session_state['reset_counter']}" 
                 gr = st.number_input("Gramos", min_value=0, value=0, step=10, key=key_peso, label_visibility="collapsed")
@@ -247,7 +232,6 @@ with tab1:
                 if kg > 0:
                     st.info(f"Equivale a: **{kg:.3f} Kg** | Subtotal: **{(precio_final*kg):.2f} Bs**")
                 
-                # Botón Agregar
                 if st.button("AGREGAR AL CARRITO ➕", type="primary", disabled=(stock<=0.001), key="btn_add"):
                     if gr > 0 and kg <= stock:
                         st.session_state['carrito'].append({
@@ -255,23 +239,22 @@ with tab1:
                             "PrecioUnit": precio_final, "CostoUnit": costo_base, "Subtotal": precio_final * kg
                         })
                         st.session_state['reset_counter'] += 1
-                        st.success("Añadido")
+                        st.success("Agregado")
                         time.sleep(0.2)
                         st.rerun()
                     else:
                         st.error("❌ Stock insuficiente o peso cero")
         else:
-            st.warning("Inventario vacío. Entra como Socio para crear productos.")
+            st.warning("Inventario vacío.")
 
     with col_der:
-        st.subheader("🛒 Carrito de Compra")
+        st.subheader("🛒 Carrito")
         if st.session_state['carrito']:
             df_c = pd.DataFrame(st.session_state['carrito'])
             st.dataframe(df_c, use_container_width=True, hide_index=True)
             
             total = df_c['Subtotal'].sum()
             
-            # Tarjeta Total
             st.markdown(f"""
             <div style="background-color: white; padding: 15px; border-radius: 10px; text-align: right; border: 2px solid #8B0000; margin-bottom: 20px;">
                 <span style="font-size: 18px; color: black; font-weight: bold;">Total a Pagar:</span><br>
@@ -279,12 +262,11 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
             
-            # --- SECCIÓN DATOS CLIENTE (Siempre visible si hay carrito) ---
             st.write("---")
             st.write("📝 **Datos del Cliente:**")
             
             c_cli, c_pay = st.columns([1, 1.5])
-            celular_cliente = c_cli.text_input("📱 Celular (WhatsApp)", placeholder="Ej: 70712345")
+            celular_cliente = c_cli.text_input("📱 WhatsApp Cliente", placeholder="70712345")
             metodo = c_pay.radio("Método de Pago", ["💵 Efectivo", "📱 QR / Banco"], horizontal=True)
             
             pago_cliente = 0.0
@@ -293,28 +275,26 @@ with tab1:
             puede_cobrar = True
             
             if metodo == "💵 Efectivo":
-                pago_cliente = st.number_input("Monto Recibido (Bs):", min_value=0.0, value=float(total))
+                pago_cliente = st.number_input("Monto Recibido:", min_value=0.0, value=float(total))
                 if pago_cliente >= total:
                     cambio = pago_cliente - total
                     st.info(f"💰 Vuelto: **{cambio:.2f} Bs**")
                     if cambio > 0:
-                        cambio_por_qr = st.checkbox(f"🔄 Devolver cambio ({cambio:.2f}) por QR")
+                        cambio_por_qr = st.checkbox(f"🔄 Vuelto por QR")
                 else:
-                    st.error(f"⚠️ Falta: {total - pago_cliente:.2f} Bs")
+                    st.error(f"Falta: {total - pago_cliente:.2f} Bs")
                     puede_cobrar = False
             
-            # Botones Finales
             col_b1, col_b2 = st.columns([1, 2])
-            if col_b1.button("🗑️ Limpiar", key="clean_cart"):
+            if col_b1.button("🗑️ Borrar", key="clean_cart"):
                 st.session_state['carrito'] = []
                 st.rerun()
             
-            if col_b2.button("✅ COBRAR VENTA", type="primary", disabled=not puede_cobrar, key="pay_final"):
-                # Proceso de cobro
+            if col_b2.button("✅ COBRAR", type="primary", disabled=not puede_cobrar, key="pay_final"):
                 fecha_ahora = datetime.now().strftime("%Y-%m-%d %H:%M")
                 nuevos_detalles = []
                 
-                # Actualizar Stock
+                # Descontar Stock
                 for item in st.session_state['carrito']:
                     indices = st.session_state['productos'].index[st.session_state['productos']['Producto'] == item['Producto']].tolist()
                     if indices:
@@ -329,20 +309,16 @@ with tab1:
                             'Subtotal': item['Subtotal'], 'Ganancia': ganancia
                         })
                 
-                # Guardar Stock
                 guardar_data(sheet, "productos", st.session_state['productos'])
                 
-                # Guardar Detalles
                 if nuevos_detalles:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(nuevos_detalles)], ignore_index=True)
                     guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
-                # Guardar Finanzas
                 detalle_txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
                 nuevo_ingreso = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': f"Venta: {detalle_txt}", 'Tipo': "Ingreso", 'Monto': total, 'MetodoPago': metodo}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo_ingreso], ignore_index=True)
                 
-                # Manejo de Cambio por QR
                 if metodo == "💵 Efectivo" and cambio_por_qr and cambio > 0:
                     swap_in = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Exc. Billete (Swap QR)", 'Tipo': "Ingreso", 'Monto': cambio, 'MetodoPago': "Efectivo"}])
                     swap_out = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Devolución Cambio", 'Tipo': "Egreso", 'Monto': -cambio, 'MetodoPago': "QR"}])
@@ -350,27 +326,24 @@ with tab1:
 
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                # Generar Ticket WhatsApp
                 lineas = "%0A".join([f"▪️ {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
-                msg = f"*🥩 EL CORTE BENIANO*%0A📅 {fecha_ahora}%0A📋 *Su Compra:*%0A{lineas}%0A----------------%0A💰 *TOTAL: {total:.2f} Bs*%0A✅ Pagado con: {metodo}"
+                msg = f"*🥩 EL CORTE BENIANO*%0A📅 {fecha_ahora}%0A📋 *Su Compra:*%0A{lineas}%0A----------------%0A💰 *TOTAL: {total:.2f} Bs*%0A✅ {metodo}"
                 
                 link = f"https://wa.me/591{celular_cliente.strip()}?text={msg}" if celular_cliente else f"https://wa.me/?text={msg}"
                 
                 st.session_state['ultimo_ticket'] = {'link': link, 'texto': "📲 ENVIAR TICKET WHATSAPP"}
                 st.session_state['carrito'] = []
                 
-                # EFECTOS Y ESPERA PARA EVITAR DOBLE CLIC/BORRADO
                 st.balloons()
-                st.success("¡Venta Cobrada Exitosamente!")
-                time.sleep(3) # Damos 3 segundos para ver los globos
+                st.success("¡Cobrado!")
+                time.sleep(3)
                 st.rerun()
 
         else:
-            st.info("El carrito está vacío. Agrega productos desde la izquierda.")
+            st.info("Carrito vacío.")
 
-    # Mostrar Botón WhatsApp si hubo venta reciente
     if st.session_state['ultimo_ticket']:
-        st.success("✅ ¡Venta registrada!")
+        st.success("✅ Venta Lista")
         st.markdown(f"""<a href="{st.session_state['ultimo_ticket']['link']}" target="_blank" class="btn-whatsapp">{st.session_state['ultimo_ticket']['texto']}</a>""", unsafe_allow_html=True)
         if st.button("Cerrar Ticket"):
             st.session_state['ultimo_ticket'] = None
@@ -378,7 +351,7 @@ with tab1:
 
     # Arqueo
     st.divider()
-    st.subheader("📊 Arqueo de Caja (Hoy)")
+    st.subheader("📊 Arqueo de Caja")
     hoy = datetime.now().strftime("%Y-%m-%d")
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     
@@ -389,51 +362,42 @@ with tab1:
         g_qr = df_hoy[(df_hoy['MetodoPago'].str.contains('QR', na=False)) & (df_hoy['Tipo'] == 'Egreso')]['Monto'].sum()
         
         c_a1, c_a2, c_a3 = st.columns(3)
-        c_a1.metric("Ventas Totales", f"{(v_qr + v_efec):.2f} Bs")
+        c_a1.metric("Ventas Total", f"{(v_qr + v_efec):.2f} Bs")
         c_a2.metric("Banco (QR)", f"{(v_qr + g_qr):.2f} Bs")
-        c_a3.metric("EFECTIVO EN CAJA", f"{(v_efec + g_efec):.2f} Bs", delta="Contar Billetes")
+        c_a3.metric("EFECTIVO", f"{(v_efec + g_efec):.2f} Bs")
     else:
-        st.caption("Aún no hay movimientos hoy.")
+        st.caption("Sin movimientos.")
 
-# ==============================================================================
-# TAB 2 & 3: ADMIN
-# ==============================================================================
+# TAB ADMIN
 if st.session_state['admin_mode']:
     with tab2:
         st.header("📦 Inventario")
-        
-        # Formulario de Alta
-        with st.expander("➕ Ingresar Nuevo Producto", expanded=True):
-            with st.form("form_alta_prod", clear_on_submit=True): # clear_on_submit BORRA AL GUARDAR
+        with st.expander("➕ Nuevo Producto", expanded=True):
+            with st.form("form_alta", clear_on_submit=True):
                 c1, c2 = st.columns(2)
-                nn = c1.text_input("Nombre del Corte")
+                nn = c1.text_input("Nombre")
                 nc = c2.selectbox("Categoría", ["Res", "Pollo", "Cerdo", "Embutidos", "Otros"])
                 c3, c4, c5 = st.columns(3)
-                nv = c3.number_input("Precio Venta (Bs)", 0.0)
-                n_costo = c4.number_input("Costo (Bs)", 0.0)
-                ns = c5.number_input("Stock Inicial (Kg)", 0.0)
+                nv = c3.number_input("Precio Venta", 0.0)
+                n_costo = c4.number_input("Costo", 0.0)
+                ns = c5.number_input("Stock", 0.0)
                 
-                if st.form_submit_button("Guardar en Nube"):
+                if st.form_submit_button("Guardar"):
                     if nn:
                         nuevo = pd.DataFrame([{'Producto': str(nn), 'Categoria': str(nc), 'Costo': float(n_costo), 'PrecioVenta': float(nv), 'StockActual': float(ns)}])
                         st.session_state['productos'] = pd.concat([st.session_state['productos'], nuevo], ignore_index=True)
                         guardar_data(sheet, "productos", st.session_state['productos'])
-                        st.success(f"✅ Producto '{nn}' guardado.")
-                        time.sleep(1.5) # Espera antes de borrar
+                        st.success(f"Guardado: {nn}")
+                        time.sleep(1.5)
                         st.rerun()
-                    else:
-                        st.error("Falta el nombre.")
 
         st.divider()
-        st.subheader("📋 Inventario Actual")
-        # Editor de datos
+        st.subheader("📋 Tabla de Productos")
         df_edit = st.data_editor(st.session_state['productos'], num_rows="dynamic", use_container_width=True, key="inv_editor")
-        
-        # Botón manual para guardar cambios en tabla (evita guardado accidental constante)
-        if st.button("💾 Guardar Cambios de la Tabla"):
+        if st.button("💾 Guardar Cambios Tabla"):
             st.session_state['productos'] = df_edit
             guardar_data(sheet, "productos", df_edit)
-            st.success("Tabla actualizada en la nube.")
+            st.success("Tabla Actualizada")
             time.sleep(1)
             st.rerun()
 
