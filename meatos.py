@@ -17,37 +17,44 @@ st.set_page_config(
 # --- ESTILOS CSS (CORREGIDO PARA VER EL MENÚ EN CELULAR) ---
 st.markdown("""
 <style>
-    /* 1. BARRA SUPERIOR Y MENÚ */
-    header {visibility: visible !important;} 
-    [data-testid="stHeader"] {
+    /* 1. FORZAR VISIBILIDAD DE LA BARRA SUPERIOR */
+    header {
         visibility: visible !important;
-        background-color: transparent !important; /* Fondo transparente para que se vea limpio */
     }
     
-    /* Forzamos que el botón del menú (la flechita > o hamburguesa) sea visible y ROJO */
+    [data-testid="stHeader"] {
+        visibility: visible !important;
+        background-color: transparent !important;
+        z-index: 999999 !important; /* ¡ESTO ES LA CLAVE! Pone el menú encima de todo */
+    }
+
+    /* 2. EL BOTÓN DE ABRIR MENÚ (LA FLECHITA O HAMBURGUESA) */
     [data-testid="collapsedControl"] {
         visibility: visible !important;
         display: block !important;
-        color: #8B0000 !important; /* Rojo Corporativo */
-        z-index: 99999 !important; /* Asegura que esté por encima de todo */
+        color: #8B0000 !important; /* Rojo para que lo veas bien */
+    }
+    
+    /* También forzamos el icono del menú de hamburguesa si aparece ese */
+    [data-testid="stDecoration"] {
+        visibility: visible !important;
+        z-index: 999999 !important;
     }
 
-    /* Ocultamos los 3 puntitos de la derecha (Opcional, para limpiar) */
-    #MainMenu {visibility: visible;} 
-    footer {visibility: hidden;}
-
-    /* 2. ESPACIADO (PADDING) */
-    /* Damos espacio arriba para que el botón del menú no se tape con las pestañas */
+    /* 3. BAJAR EL CONTENIDO PARA QUE NO TAPE EL MENÚ */
     .block-container {
-        padding-top: 3.5rem !important; 
+        padding-top: 5rem !important; /* Mucho espacio arriba para que no estorbe */
         padding-bottom: 1rem;
     }
     
-    /* 3. BOTONES Y TARJETAS */
+    /* Ocultar pie de página */
+    footer {visibility: hidden;}
+    #MainMenu {visibility: visible;} 
+
+    /* ESTILOS GENERALES (Botones, Tarjetas) */
     .stButton>button {font-weight: bold; border-radius: 8px; height: 3em; width: 100%;}
     button[kind="primary"] {background-color: #8B0000 !important; color: white !important; border: none !important;}
     button[kind="primary"]:hover {background-color: #A52A2A !important; box-shadow: 0 4px 8px rgba(0,0,0,0.2);}
-
     div[data-testid="stMetric"] {border: 1px solid #444; padding: 10px; border-radius: 8px; text-align: center;}
     
     .btn-whatsapp {
@@ -463,3 +470,4 @@ if st.session_state['admin_mode']:
                 st.rerun() 
             else:
                 st.warning("Selecciona 'Todo el Historial' para editar.")
+
