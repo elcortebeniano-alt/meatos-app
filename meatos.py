@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS (CORRECCIÓN DE CONTRASTE PARA MODO OSCURO) ---
+# --- ESTILOS CSS (CONTRASTE ALTO + MENÚ NATIVO) ---
 st.markdown("""
 <style>
     /* 1. BOTONES */
@@ -34,23 +34,16 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
-    /* 2. TARJETAS DE DATOS (PRECIO, STOCK, ARQUEO) */
-    /* Aquí estaba el problema. Ahora forzamos el color del texto. */
+    /* 2. TARJETAS DE DATOS (Forzamos letras negras para Modo Oscuro) */
     div[data-testid="stMetric"] {
-        background-color: #f0f2f6 !important; /* Fondo Gris Claro */
+        background-color: #f0f2f6 !important; 
         border: 1px solid #d0d0d0;
         padding: 10px;
         border-radius: 8px;
         text-align: center;
     }
-
-    /* FORZAR TEXTO NEGRO EN LAS TARJETAS (Para que se vea en Modo Oscuro) */
-    div[data-testid="stMetricLabel"] p {
-        color: #000000 !important; /* Título en Negro */
-    }
-    div[data-testid="stMetricValue"] div {
-        color: #000000 !important; /* Número en Negro */
-    }
+    div[data-testid="stMetricLabel"] p { color: #000000 !important; }
+    div[data-testid="stMetricValue"] div { color: #000000 !important; }
 
     /* 3. BOTÓN WHATSAPP */
     .btn-whatsapp {
@@ -64,7 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN A GOOGLE ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
@@ -161,7 +154,7 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.6 | Dark Mode Fix")
+    st.caption("MeatOS v3.7 | Full Admin")
 
 # --- APP ---
 tab1, tab2, tab3 = None, None, None
@@ -193,7 +186,7 @@ with tab1:
                 }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("✅ Movimiento Registrado")
+                st.success("✅ Registrado")
                 time.sleep(1)
                 st.rerun()
 
@@ -216,8 +209,6 @@ with tab1:
                 data = df_filtrado.iloc[0]
                 
                 precio_base = float(data['PrecioVenta'])
-                costo_base = float(data.get('Costo', 0.0))
-                cat_base = str(data.get('Categoria', 'General'))
                 try: stock = float(data.get('StockActual', 0.0))
                 except: stock = 0.0
                 
@@ -240,8 +231,8 @@ with tab1:
                 if st.button("AGREGAR AL CARRITO ➕", type="primary", disabled=(stock<=0.001), key="btn_add"):
                     if gr > 0 and kg <= stock:
                         st.session_state['carrito'].append({
-                            "Producto": prod_sel, "Categoria": cat_base, "Cantidad": kg,
-                            "PrecioUnit": precio_final, "CostoUnit": costo_base, "Subtotal": precio_final * kg
+                            "Producto": prod_sel, "Categoria": str(data.get('Categoria', 'General')), "Cantidad": kg,
+                            "PrecioUnit": precio_final, "CostoUnit": float(data.get('Costo', 0.0)), "Subtotal": precio_final * kg
                         })
                         st.session_state['reset_counter'] += 1
                         st.success("Agregado")
@@ -299,14 +290,12 @@ with tab1:
                 fecha_ahora = datetime.now().strftime("%Y-%m-%d %H:%M")
                 nuevos_detalles = []
                 
-                # Descontar Stock
                 for item in st.session_state['carrito']:
                     indices = st.session_state['productos'].index[st.session_state['productos']['Producto'] == item['Producto']].tolist()
                     if indices:
                         idx = indices[0]
                         curr = float(st.session_state['productos'].at[idx, 'StockActual'])
                         st.session_state['productos'].at[idx, 'StockActual'] = curr - item['Cantidad']
-                        
                         ganancia = (item['PrecioUnit'] - item['CostoUnit']) * item['Cantidad']
                         nuevos_detalles.append({
                             'Fecha': fecha_ahora, 'Producto': item['Producto'], 'Categoria': item['Categoria'],
@@ -315,7 +304,6 @@ with tab1:
                         })
                 
                 guardar_data(sheet, "productos", st.session_state['productos'])
-                
                 if nuevos_detalles:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(nuevos_detalles)], ignore_index=True)
                     guardar_data(sheet, "detalles", st.session_state['detalles'])
@@ -335,15 +323,12 @@ with tab1:
                 msg = f"*🥩 EL CORTE BENIANO*%0A📅 {fecha_ahora}%0A📋 *Su Compra:*%0A{lineas}%0A----------------%0A💰 *TOTAL: {total:.2f} Bs*%0A✅ {metodo}"
                 
                 link = f"https://wa.me/591{celular_cliente.strip()}?text={msg}" if celular_cliente else f"https://wa.me/?text={msg}"
-                
                 st.session_state['ultimo_ticket'] = {'link': link, 'texto': "📲 ENVIAR TICKET WHATSAPP"}
                 st.session_state['carrito'] = []
-                
                 st.balloons()
                 st.success("¡Cobrado!")
                 time.sleep(3)
                 st.rerun()
-
         else:
             st.info("Carrito vacío.")
 
@@ -386,7 +371,6 @@ if st.session_state['admin_mode']:
                 nv = c3.number_input("Precio Venta", 0.0)
                 n_costo = c4.number_input("Costo", 0.0)
                 ns = c5.number_input("Stock", 0.0)
-                
                 if st.form_submit_button("Guardar"):
                     if nn:
                         nuevo = pd.DataFrame([{'Producto': str(nn), 'Categoria': str(nc), 'Costo': float(n_costo), 'PrecioVenta': float(nv), 'StockActual': float(ns)}])
@@ -397,15 +381,51 @@ if st.session_state['admin_mode']:
                         st.rerun()
 
         st.divider()
-        st.subheader("📋 Tabla de Productos")
+        st.subheader("📋 Tabla de Productos (Editable)")
+        # num_rows="dynamic" PERMITE BORRAR FILAS
         df_edit = st.data_editor(st.session_state['productos'], num_rows="dynamic", use_container_width=True, key="inv_editor")
-        if st.button("💾 Guardar Cambios Tabla"):
+        if st.button("💾 Guardar Cambios Inventario"):
             st.session_state['productos'] = df_edit
             guardar_data(sheet, "productos", df_edit)
-            st.success("Tabla Actualizada")
+            st.success("Inventario Actualizado")
             time.sleep(1)
             st.rerun()
 
     with tab3:
-        st.header("📊 Finanzas")
-        st.dataframe(st.session_state['finanzas'], use_container_width=True)
+        st.header("📊 Finanzas & Gerencia")
+        
+        # 1. Registrar Gastos Admin
+        with st.container(border=True):
+            st.subheader("📝 Registrar Movimiento Administrativo")
+            col_ga1, col_ga2 = st.columns(2)
+            desc_adm = col_ga1.text_input("Descripción (Ej: Sueldos, Alquiler)")
+            monto_adm = col_ga2.number_input("Monto (Bs)", 0.0)
+            tipo_adm = st.radio("Tipo Movimiento", ["Egreso (Gasto)", "Ingreso (Capital)"], horizontal=True)
+            
+            if st.button("Registrar Movimiento Admin"):
+                if monto_adm > 0 and desc_adm:
+                    signo = -1 if "Egreso" in tipo_adm else 1
+                    tipo_bd = "Egreso" if "Egreso" in tipo_adm else "Ingreso"
+                    nuevo_adm = pd.DataFrame([{
+                        'Fecha': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        'Detalle': f"[ADMIN] {desc_adm}", 'Tipo': tipo_bd, 'Monto': monto_adm * signo, 'MetodoPago': 'Transferencia/Otro'
+                    }])
+                    st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo_adm], ignore_index=True)
+                    guardar_data(sheet, "finanzas", st.session_state['finanzas'])
+                    st.success("Registrado")
+                    time.sleep(1)
+                    st.rerun()
+
+        st.divider()
+        st.subheader("📒 Libro Contable (Editable)")
+        st.caption("Selecciona filas y presiona 'Supr' para borrar. Luego dale a Guardar.")
+        
+        # Tabla Editable para Finanzas
+        df_fin_edit = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_editor")
+        
+        if st.button("💾 Guardar Cambios Finanzas"):
+            st.session_state['finanzas'] = df_fin_edit
+            guardar_data(sheet, "finanzas", df_fin_edit)
+            st.success("Finanzas Actualizadas")
+            time.sleep(1)
+            st.rerun()
