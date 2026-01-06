@@ -11,21 +11,39 @@ st.set_page_config(
     page_title="El Corte Beniano | Cloud POS", 
     layout="wide", 
     page_icon="🥩",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # Arranca cerrado en móvil para ahorrar espacio
 )
 
-# --- ESTILOS CSS (CORREGIDO: BARRA SUPERIOR VISIBLE PARA MÓVIL) ---
+# --- ESTILOS CSS (CORREGIDO PARA VER EL MENÚ EN CELULAR) ---
 st.markdown("""
 <style>
-    /* Ocultamos menú hamburguesa y pie de página, PERO DEJAMOS EL HEADER */
-    #MainMenu {visibility: visible;} /* Dejar visible para opciones de usuario */
-    footer {visibility: hidden;}
+    /* 1. BARRA SUPERIOR Y MENÚ */
+    header {visibility: visible !important;} 
+    [data-testid="stHeader"] {
+        visibility: visible !important;
+        background-color: transparent !important; /* Fondo transparente para que se vea limpio */
+    }
     
-    /* ELIMINADA LA LÍNEA QUE OCULTABA EL HEADER PARA PODER ABRIR EL MENÚ EN MÓVIL */
-    /* header {visibility: hidden;} <--- ESTA ERA LA CULPABLE */
+    /* Forzamos que el botón del menú (la flechita > o hamburguesa) sea visible y ROJO */
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: block !important;
+        color: #8B0000 !important; /* Rojo Corporativo */
+        z-index: 99999 !important; /* Asegura que esté por encima de todo */
+    }
 
-    .block-container {padding-top: 1rem; padding-bottom: 1rem;}
+    /* Ocultamos los 3 puntitos de la derecha (Opcional, para limpiar) */
+    #MainMenu {visibility: visible;} 
+    footer {visibility: hidden;}
+
+    /* 2. ESPACIADO (PADDING) */
+    /* Damos espacio arriba para que el botón del menú no se tape con las pestañas */
+    .block-container {
+        padding-top: 3.5rem !important; 
+        padding-bottom: 1rem;
+    }
     
+    /* 3. BOTONES Y TARJETAS */
     .stButton>button {font-weight: bold; border-radius: 8px; height: 3em; width: 100%;}
     button[kind="primary"] {background-color: #8B0000 !important; color: white !important; border: none !important;}
     button[kind="primary"]:hover {background-color: #A52A2A !important; box-shadow: 0 4px 8px rgba(0,0,0,0.2);}
@@ -142,7 +160,7 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.2 | Mobile Fix")
+    st.caption("MeatOS v3.3 | UI Rescue")
 
 # --- TABS ---
 tab1, tab2, tab3 = None, None, None
@@ -174,7 +192,7 @@ with tab1:
                 }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.toast(f"✅ Guardado: {monto_caja} Bs")
+                st.toast(f"✅ Guardado en Nube: {monto_caja} Bs")
                 time.sleep(0.5)
                 st.rerun()
 
