@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta # <--- IMPORTANTE: Agregamos timedelta
 import streamlit.components.v1 as components
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
@@ -14,6 +14,14 @@ st.set_page_config(page_title="El Corte Beniano | POS", layout="wide", page_icon
 
 # 1. CARGAR DISEÑO
 styles.cargar_css()
+
+# --- FUNCIÓN MAESTRA DE HORA BOLIVIANA (UTC - 4) ---
+def get_bolivia_time():
+    # Toma la hora universal y resta 4 horas
+    return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
+
+def get_bolivia_date():
+    return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d")
 
 # 2. CONEXIÓN DATOS
 if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.conectar_google_sheets()
@@ -35,7 +43,7 @@ if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
 
-# --- DATOS DEL NEGOCIO PARA EL RECIBO ---
+# --- DATOS DEL NEGOCIO ---
 DIRECCION_NEGOCIO = "Calle A. García #1128, Cochabamba"
 TELEFONO_NEGOCIO = "591 77420111"
 
@@ -52,7 +60,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.3 | Pro Receipt")
+    st.caption("MeatOS v4.4 | Hora Bolivia")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -64,6 +72,8 @@ else:
 # === PESTAÑA 1: VENTA ===
 with tab1:
     st.title("Caja Registradora")
+    
+    # CAJA CHICA
     with st.expander("💸 Gastos / Movimientos de Caja"):
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         opciones = ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"]
@@ -76,7 +86,8 @@ with tab1:
             if monto > 0:
                 signo = -1 if "Salida" in tipo else 1
                 tipo_bd = "Egreso" if "Salida" in tipo else "Ingreso"
-                nuevo = pd.DataFrame([{'Fecha': datetime.now().strftime("%Y-%m-%d %H:%M"), 'Detalle': f"[CAJA] {detalle}", 'Tipo': tipo_bd, 'Monto': monto * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0}])
+                # AQUI USAMOS LA HORA BOLIVIANA
+                nuevo = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[CAJA] {detalle}", 'Tipo': tipo_bd, 'Monto': monto * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("✅ Registrado"); time.sleep(1); st.rerun()
@@ -143,10 +154,10 @@ with tab1:
             b1, b2 = st.columns([1, 2])
             if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
             if b2.button("✅ COBRAR", type="primary", disabled=not cobrar):
-                now_dt = datetime.now()
-                now_str = now_dt.strftime("%Y-%m-%d %H:%M")
-                # Generar ID de Recibo Único
-                recibo_id = f"#REC-{now_dt.strftime('%Y%m%d-%H%M%S')}"
+                # AQUI USAMOS LA HORA BOLIVIANA
+                now_str = get_bolivia_time()
+                # ID Único basado en hora Bolivia
+                recibo_id = f"#REC-{now_str.replace('-','').replace(':','').replace(' ','-')}"
 
                 detalles = []
                 for item in st.session_state['carrito']:
@@ -179,7 +190,6 @@ with tab1:
                 msg = f"*** EL CORTE BENIANO ***%0ARecibo: {recibo_id}%0AFecha: {now_str}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg}" if cel else f"https://wa.me/?text={msg}"
                 
-                # GENERAR HTML PREMIUM
                 html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO)
 
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
@@ -205,7 +215,8 @@ with tab1:
 
     st.divider()
     st.subheader("📊 Arqueo (Hoy)")
-    hoy = datetime.now().strftime("%Y-%m-%d")
+    # AQUI USAMOS LA FECHA BOLIVIANA
+    hoy = get_bolivia_date()
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     if not df_hoy.empty:
         v_qr = df_hoy[df_hoy['MetodoPago'].str.contains('QR', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
@@ -238,7 +249,10 @@ if st.session_state['admin_mode']:
         if not df_f.empty and 'Ganancia' in df_f.columns:
             df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
             df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
-            now = datetime.now()
+            
+            # FECHA BOLIVIA PARA CALCULOS
+            now = datetime.utcnow() - timedelta(hours=4)
+            
             g_hoy = df_f[df_f['Fecha_dt'].dt.date == now.date()]['Ganancia'].sum()
             g_mes = df_f[(df_f['Fecha_dt'].dt.month == now.month) & (df_f['Fecha_dt'].dt.year == now.year)]['Ganancia'].sum()
             c1, c2, c3 = st.columns(3)
@@ -254,7 +268,8 @@ if st.session_state['admin_mode']:
             tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True)
             if st.button("Registrar") and mont > 0:
                 s = -1 if tipo == "Egreso" else 1
-                n = pd.DataFrame([{'Fecha': datetime.now().strftime("%Y-%m-%d %H:%M"), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
+                # AQUI USAMOS LA HORA BOLIVIANA
+                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Listo"); time.sleep(1); st.rerun()
