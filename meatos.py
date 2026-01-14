@@ -268,16 +268,17 @@ if st.session_state['admin_mode']:
         
         st.divider()
         
-        # --- NUEVO: BOTÓN PARA EL BANCO ---
+# --- NUEVO: BOTÓN PARA EL BANCO (CORREGIDO PARA EXCEL BOLIVIA) ---
         st.subheader("📂 Exportar para Banco / Contador")
         col_down1, col_down2 = st.columns([2,1])
         with col_down1:
-            st.caption("Descarga el historial completo de movimientos (Libro Diario) en formato Excel compatible (CSV).")
+            st.caption("Descarga el historial completo (Libro Diario). Formato corregido para Excel.")
         with col_down2:
-            # Convertimos el DataFrame a CSV para descargar
-            csv = df_f.to_csv(index=False).encode('utf-8')
+            # CORRECCIÓN: Usamos sep=';' para columnas y encoding='utf-8-sig' para tildes/ñ
+            csv = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
+            
             st.download_button(
-                label="📥 Descargar Historial Completo",
+                label="📥 Descargar Excel (Corregido)",
                 data=csv,
                 file_name=f"MeatOS_LibroDiario_{datetime.now().strftime('%Y-%m-%d')}.csv",
                 mime='text/csv',
@@ -302,4 +303,5 @@ if st.session_state['admin_mode']:
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
 
