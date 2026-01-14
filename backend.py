@@ -62,19 +62,18 @@ def get_image_base64(path):
     except:
         return ""
 
-# --- GENERADOR DE TICKET (CALIBRADO 58MM) ---
+# --- GENERADOR DE TICKET (CENTRADO AGRESIVO) ---
 def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono):
     
     # Cargar Logo
     logo_b64 = get_image_base64("Logo-Final.png")
-    # Ajustamos el tamaño del logo para que no empuje el texto
-    img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 45px; height: auto;">' if logo_b64 else ""
+    img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 50px; height: auto;">' if logo_b64 else ""
 
     items_html = ""
     for item in carrito:
         items_html += f"""
         <div style="margin-bottom: 6px; border-bottom: 1px dashed #ccc; padding-bottom: 4px;">
-            <div style="font-weight: bold; font-size: 11px; color: #000;">{item['Producto']}</div>
+            <div style="font-weight: bold; font-size: 11px; color: #000; text-align: left;">{item['Producto']}</div>
             <div style="display: flex; justify-content: space-between; font-size: 10px; color: #333;">
                 <div>{item['Cantidad']:.3f} x {item['PrecioUnit']:.2f}</div>
                 <div style="font-weight: bold;">{item['Subtotal']:.2f}</div>
@@ -88,61 +87,69 @@ def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, tel
     <head>
         <meta charset="UTF-8">
         <style>
-            /* CONFIGURACIÓN CRÍTICA DE PÁGINA */
             @page {{
                 margin: 0;
-                size: 58mm auto; /* Forzar ancho de papel térmico */
+                size: 58mm auto; 
             }}
             
             body {{
                 font-family: 'Helvetica', 'Arial', sans-serif;
                 margin: 0;
-                padding: 2px;
-                width: 100%;
-                max-width: 48mm; /* Ancho máximo seguro de impresión */
+                padding: 0;
                 background-color: #fff;
-                color: #000;
-                font-size: 10px; /* Letra base pequeña */
+                
+                /* TRUCO DEL CENTRADO AGRESIVO */
+                display: flex;
+                flex-direction: column;
+                align-items: center; 
+                width: 100%;
             }}
 
-            /* Contenedor Flex para Header */
+            /* EL TICKET EN SÍ MISMO */
+            .ticket-body {{
+                width: 48mm; /* Ancho fijo seguro */
+                padding: 2px;
+                box-sizing: border-box;
+            }}
+
+            /* Header */
             .header-container {{
                 display: flex;
-                align-items: center; /* Centrado vertical */
+                align-items: center;
                 justify-content: space-between;
                 margin-bottom: 10px;
                 border-bottom: 2px solid #000;
                 padding-bottom: 5px;
             }}
             
-            .logo-box {{ flex: 0 0 50px; }} /* Espacio fijo para logo */
+            .logo-box {{ flex: 0 0 50px; }}
             .info-box {{ flex: 1; text-align: right; padding-left: 5px; }}
             
-            .biz-name {{ font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; }}
-            .biz-meta {{ font-size: 9px; margin: 1px 0; display: block; }}
-            .recibo-id {{ font-size: 10px; font-weight: bold; margin-top: 2px; display: block; }}
+            .biz-name {{ font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; color: #000; }}
+            .biz-meta {{ font-size: 9px; margin: 1px 0; display: block; color: #444; }}
+            .recibo-id {{ font-size: 10px; font-weight: bold; margin-top: 2px; display: block; color: #000; }}
 
             .section-title {{ 
                 font-size: 10px; font-weight: bold; 
                 text-transform: uppercase; 
                 margin: 5px 0; border-bottom: 1px solid #000; 
+                text-align: left;
             }}
 
-            /* Totales */
             .totals-box {{ 
                 margin-top: 10px; 
                 text-align: right; 
                 border-top: 1px solid #000; 
                 padding-top: 5px; 
             }}
-            .total-big {{ font-size: 14px; font-weight: bold; }}
+            .total-big {{ font-size: 14px; font-weight: bold; color: #000; }}
             
             .footer {{ 
                 text-align: center; margin-top: 15px; 
-                font-size: 9px; 
+                font-size: 9px; color: #444;
             }}
             
-            .no-print {{ text-align: center; margin-bottom: 10px; }}
+            .no-print {{ text-align: center; margin-bottom: 10px; padding-top: 5px; width: 100%; }}
             button {{ background:#000; color:#fff; border:none; padding:5px 10px; border-radius:4px; font-size:10px; }}
 
             @media print {{ .no-print {{ display: none; }} }}
@@ -151,28 +158,32 @@ def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, tel
     <body>
         <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR</button></div>
 
-        <div class="header-container">
-            <div class="logo-box">{img_tag}</div>
-            <div class="info-box">
-                <span class="biz-name">El Corte Beniano</span>
-                <span class="biz-meta">{direccion}</span>
-                <span class="biz-meta">{telefono}</span>
-                <span class="recibo-id">{recibo_id}</span>
+        <div class="ticket-body">
+            
+            <div class="header-container">
+                <div class="logo-box">{img_tag}</div>
+                <div class="info-box">
+                    <span class="biz-name">El Corte Beniano</span>
+                    <span class="biz-meta">{direccion}</span>
+                    <span class="biz-meta">{telefono}</span>
+                    <span class="recibo-id">{recibo_id}</span>
+                </div>
             </div>
-        </div>
 
-        <div class="section-title">DETALLE DE COMPRA</div>
-        
-        <div>{items_html}</div>
+            <div class="section-title">DETALLE DE COMPRA</div>
+            
+            <div>{items_html}</div>
 
-        <div class="totals-box">
-            <div class="total-big">Total: {total:.2f} Bs</div>
-            <div style="font-size: 10px;">Pago: {metodo}</div>
-        </div>
+            <div class="totals-box">
+                <div class="total-big">Total: {total:.2f} Bs</div>
+                <div style="font-size: 10px;">Pago: {metodo}</div>
+            </div>
 
-        <div class="footer">
-            <p style="margin:0; font-weight:bold;">¡Gracias por su compra!</p>
-            <p style="margin:2px 0;">{fecha}</p>
+            <div class="footer">
+                <p style="margin:0; font-weight:bold;">¡Gracias por su compra!</p>
+                <p style="margin:2px 0;">{fecha}</p>
+            </div>
+            
         </div>
 
         <script>
