@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, date
 import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -109,7 +109,6 @@ if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = conectar
 sheet = st.session_state['sheet_obj']
 
 if sheet:
-    # AÑADIMOS 'Ganancia' A LA TABLA DE FINANZAS
     if 'finanzas' not in st.session_state: st.session_state['finanzas'] = cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago', 'Ganancia'])
     if 'productos' not in st.session_state: st.session_state['productos'] = cargar_data(sheet, "productos", ['Producto', 'Costo', 'PrecioVenta', 'Categoria', 'StockActual'])
     if 'detalles' not in st.session_state: st.session_state['detalles'] = cargar_data(sheet, "detalles", ['Fecha', 'Producto', 'Categoria', 'PesoKg', 'CostoUnit', 'PrecioVentaUnit', 'Subtotal', 'Ganancia'])
@@ -155,7 +154,7 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.8 | Precision")
+    st.caption("MeatOS v3.9 | Profit Analytics")
 
 # --- APP ---
 tab1, tab2, tab3 = None, None, None
@@ -249,12 +248,12 @@ with tab1:
         if st.session_state['carrito']:
             df_c = pd.DataFrame(st.session_state['carrito'])
             
-            # --- MODIFICACIÓN 1: OCULTAR COSTO AL VENDEDOR ---
-            # Solo mostramos columnas relevantes para el vendedor
+            # VENDEDOR CIEGO: No mostramos Costo
             columnas_visibles = ["Producto", "Cantidad", "PrecioUnit", "Subtotal"]
             st.dataframe(df_c[columnas_visibles], use_container_width=True, hide_index=True)
             
             total = df_c['Subtotal'].sum()
+            # CÁLCULO DE GANANCIA EN TIEMPO REAL (Considera descuentos)
             total_ganancia_venta = sum([(row['PrecioUnit'] - row['CostoUnit']) * row['Cantidad'] for row in st.session_state['carrito']])
             
             st.markdown(f"""
@@ -277,7 +276,6 @@ with tab1:
             puede_cobrar = True
             
             if metodo == "💵 Efectivo":
-                # --- MODIFICACIÓN 2: EFECTIVO OBLIGATORIO DESDE 0 ---
                 pago_cliente = st.number_input("Monto Recibido:", min_value=0.0, value=0.0, step=0.5, help="Ingrese cuánto dinero entrega el cliente")
                 
                 if pago_cliente >= total:
@@ -286,7 +284,7 @@ with tab1:
                     if cambio > 0:
                         cambio_por_qr = st.checkbox(f"🔄 Vuelto por QR")
                 else:
-                    if pago_cliente > 0: # Solo muestra error si ya intentó escribir
+                    if pago_cliente > 0:
                         st.error(f"Falta: {total - pago_cliente:.2f} Bs")
                     else:
                         st.warning("Ingrese el monto recibido.")
@@ -307,6 +305,7 @@ with tab1:
                         idx = indices[0]
                         curr = float(st.session_state['productos'].at[idx, 'StockActual'])
                         st.session_state['productos'].at[idx, 'StockActual'] = curr - item['Cantidad']
+                        # CÁLCULO INDIVIDUAL POR ITEM
                         ganancia = (item['PrecioUnit'] - item['CostoUnit']) * item['Cantidad']
                         nuevos_detalles.append({
                             'Fecha': fecha_ahora, 'Producto': item['Producto'], 'Categoria': item['Categoria'],
@@ -319,7 +318,7 @@ with tab1:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(nuevos_detalles)], ignore_index=True)
                     guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
-                # --- MODIFICACIÓN 4: GUARDAR GANANCIA EN FINANZAS ---
+                # GUARDAR GANANCIA TOTAL EN FINANZAS
                 detalle_txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
                 nuevo_ingreso = pd.DataFrame([{
                     'Fecha': fecha_ahora, 'Detalle': f"Venta: {detalle_txt}", 'Tipo': "Ingreso", 
@@ -334,7 +333,7 @@ with tab1:
 
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                # --- MODIFICACIÓN 3: TICKET SIN EMOJIS COMPLEJOS ---
+                # TICKET LIMPIO
                 lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
                 msg = f"*** EL CORTE BENIANO ***%0AFecha: {fecha_ahora}%0A-- SU COMPRA --%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 
@@ -409,23 +408,54 @@ if st.session_state['admin_mode']:
     with tab3:
         st.header("📊 Finanzas & Gerencia")
         
-        # --- MODIFICACIÓN 5: CÁLCULOS PRECISOS Y TOTALES ---
-        st.subheader("🏦 Estado Financiero (Histórico Total)")
-        
         df_fin = st.session_state['finanzas']
-        if not df_fin.empty:
-            # Cálculos considerando ingresos y egresos
-            total_ingreso = df_fin[df_fin['Tipo'] == 'Ingreso']['Monto'].sum()
-            total_egreso = df_fin[df_fin['Tipo'] == 'Egreso']['Monto'].sum()
-            saldo_total = total_ingreso + total_egreso # Egreso ya es negativo en la BD? No, se guarda positivo en Monto pero se multiplica por signo antes. 
-            # Corrección: En el código de caja, guardamos 'Monto' * signo. Así que Monto ya tiene el signo.
-            saldo_total = df_fin['Monto'].sum()
+        
+        # --- SECCIÓN 1: KPI DE GANANCIAS ---
+        st.subheader("💰 Rentabilidad del Negocio (Ganancia Neta)")
+        
+        if not df_fin.empty and 'Ganancia' in df_fin.columns:
+            # Asegurar formato fecha
+            df_fin['Fecha_dt'] = pd.to_datetime(df_fin['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
+            df_fin['Ganancia'] = pd.to_numeric(df_fin['Ganancia'], errors='coerce').fillna(0.0)
 
-            # Efectivo
+            # HOY
+            hoy_dt = datetime.now().date()
+            ganancia_hoy = df_fin[df_fin['Fecha_dt'].dt.date == hoy_dt]['Ganancia'].sum()
+
+            # ESTE MES
+            mes_act = datetime.now().month
+            anio_act = datetime.now().year
+            ganancia_mes = df_fin[
+                (df_fin['Fecha_dt'].dt.month == mes_act) & 
+                (df_fin['Fecha_dt'].dt.year == anio_act)
+            ]['Ganancia'].sum()
+
+            # ANUAL
+            ganancia_anio = df_fin[df_fin['Fecha_dt'].dt.year == anio_act]['Ganancia'].sum()
+
+            col_g1, col_g2, col_g3 = st.columns(3)
+            col_g1.metric("Ganancia HOY", f"{ganancia_hoy:.2f} Bs")
+            col_g2.metric("Ganancia MES", f"{ganancia_mes:.2f} Bs")
+            col_g3.metric("Ganancia AÑO", f"{ganancia_anio:.2f} Bs")
+            
+            # FILTRO POR FECHA ESPECÍFICA
+            st.caption("🔎 Consultar fecha específica:")
+            fecha_filtro = st.date_input("Selecciona Fecha", value=None)
+            if fecha_filtro:
+                g_fecha = df_fin[df_fin['Fecha_dt'].dt.date == fecha_filtro]['Ganancia'].sum()
+                st.info(f"Ganancia del {fecha_filtro.strftime('%d/%m/%Y')}: **{g_fecha:.2f} Bs**")
+        
+        st.divider()
+
+        # --- SECCIÓN 2: CAJA Y DINERO ---
+        st.subheader("🏦 Estado de Caja (Dinero Real)")
+        
+        if not df_fin.empty:
+            saldo_total = df_fin['Monto'].sum()
+            
             df_efectivo = df_fin[df_fin['MetodoPago'].astype(str).str.contains('Efectivo', case=False, na=False)]
             saldo_efectivo = df_efectivo['Monto'].sum()
 
-            # QR/Banco
             df_qr = df_fin[df_fin['MetodoPago'].astype(str).str.contains('QR', case=False, na=False) | df_fin['MetodoPago'].astype(str).str.contains('Banco', case=False, na=False)]
             saldo_qr = df_qr['Monto'].sum()
 
@@ -462,9 +492,8 @@ if st.session_state['admin_mode']:
 
         st.divider()
         st.subheader("📒 Libro Contable (Editable)")
-        st.caption("Si borras una venta aquí, el saldo de arriba se recalcula automáticamente.")
+        st.caption("Si borras una venta aquí, el saldo se recalcula.")
         
-        # Tabla Editable para Finanzas
         df_fin_edit = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_editor")
         
         if st.button("💾 Guardar Cambios Finanzas"):
