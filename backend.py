@@ -53,21 +53,20 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- GENERADOR DE TICKET HTML (CALIBRADO PARA 58mm/57mm) ---
+# --- GENERADOR DE TICKET HTML (VERSIÓN CENTRADO PERFECTO) ---
 def generar_html_ticket(carrito, total, fecha, metodo):
-    """Genera HTML ajustado para evitar cortes en los márgenes"""
     
     items_html = ""
     for item in carrito:
         items_html += f"""
         <tr>
-            <td colspan="2" style="padding-top: 3px; font-weight: bold; font-size: 11px;">{item['Producto']}</td>
+            <td colspan="2" style="padding-top: 2px; font-weight: bold; font-size: 11px; text-align: left;">{item['Producto']}</td>
         </tr>
         <tr>
-            <td style="padding-bottom: 3px; border-bottom: 1px dashed #000; font-size: 11px;">
+            <td style="padding-bottom: 2px; border-bottom: 1px dashed #000; font-size: 11px; text-align: left;">
                 {item['Cantidad']:.3f} x {item['PrecioUnit']:.2f}
             </td>
-            <td style="padding-bottom: 3px; border-bottom: 1px dashed #000; font-size: 11px; text-align: right;">
+            <td style="padding-bottom: 2px; border-bottom: 1px dashed #000; font-size: 11px; text-align: right;">
                 {item['Subtotal']:.2f}
             </td>
         </tr>
@@ -78,33 +77,57 @@ def generar_html_ticket(carrito, total, fecha, metodo):
     <html>
     <head>
         <style>
+            /* CONFIGURACIÓN DE PÁGINA PARA IMPRESORA TÉRMICA */
+            @page {{
+                margin: 0; /* Quitamos márgenes del navegador */
+                size: 58mm auto; /* Indicamos tamaño de papel */
+            }}
+            
             body {{
-                font-family: 'Courier New', monospace;
-                /* AJUSTE CLAVE: Usamos 48mm para asegurar que entre en el papel de 57mm */
-                width: 48mm; 
                 margin: 0;
-                background-color: #fff;
                 padding: 0;
+                width: 100%;
+                background-color: #fff;
+                font-family: 'Courier New', monospace;
                 color: #000;
+                text-align: center; /* Centrar todo el contenido del body */
             }}
-            .container {{
-                padding: 2px; /* Margen mínimo de seguridad */
+
+            /* CONTENEDOR FLOTANTE CENTRADO */
+            .ticket-container {{
+                width: 100%;
+                max-width: 46mm; /* ANCHO SEGURO (Menos que 57mm para evitar bordes) */
+                margin: 0 auto;  /* ESTO ES LO QUE CENTRA EL TICKET */
+                padding: 5px 0;
+                display: inline-block; /* Ayuda al centrado */
+                text-align: left; /* El texto interno vuelve a la izquierda */
             }}
-            .header {{ text-align: center; }}
+
+            .header, .footer {{ text-align: center; }}
             .title {{ font-size: 14px; font-weight: bold; margin: 0; }}
             .subtitle {{ font-size: 11px; margin: 0; }}
-            .divider {{ border-top: 1px dashed black; margin: 5px 0; }}
+            
+            .divider {{ 
+                border-top: 1px dashed black; 
+                margin: 5px 0; 
+                width: 100%;
+            }}
+            
             table {{ width: 100%; border-collapse: collapse; }}
-            .total {{ font-size: 16px; font-weight: bold; text-align: right; margin-top: 5px; }}
-            .footer {{ text-align: center; margin-top: 10px; font-size: 10px; }}
             
-            .no-print {{ text-align: center; margin-bottom: 10px; padding-top: 10px; }}
-            button {{ background-color: #000; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }}
+            .total {{ 
+                font-size: 16px; 
+                font-weight: bold; 
+                text-align: right; 
+                margin-top: 5px; 
+            }}
             
+            .no-print {{ text-align: center; margin-bottom: 15px; padding-top: 10px; }}
+            button {{ background-color: #000; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }}
+
             @media print {{
                 .no-print {{ display: none; }}
-                @page {{ margin: 0; size: auto; }}
-                body {{ margin: 0; }}
+                body, .ticket-container {{ width: 100%; margin: 0 auto; }}
             }}
         </style>
     </head>
@@ -113,13 +136,19 @@ def generar_html_ticket(carrito, total, fecha, metodo):
             <button onclick="window.print()">🖨️ IMPRIMIR</button>
         </div>
 
-        <div class="container">
+        <div class="ticket-container">
             <div class="header">
                 <p class="title">EL CORTE BENIANO</p>
                 <p class="subtitle">Carne de Primera</p>
             </div>
+            
             <div class="divider"></div>
-            <p style="margin: 2px 0; font-size: 11px;">Fecha: {fecha}<br>Pago: {metodo}</p>
+            
+            <div style="font-size: 11px; text-align: center;">
+                {fecha}<br>
+                <b>Pago: {metodo}</b>
+            </div>
+            
             <div class="divider"></div>
             
             <table>{items_html}</table>
@@ -128,7 +157,9 @@ def generar_html_ticket(carrito, total, fecha, metodo):
             <div class="total">TOTAL: {total:.2f} Bs</div>
             <div class="divider"></div>
             
-            <div class="footer"><p>¡Gracias por su compra!</p></div>
+            <div class="footer">
+                <p style="font-size: 10px; margin: 5px 0;">¡Gracias por su compra!</p>
+            </div>
         </div>
 
         <script>
