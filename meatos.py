@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import os
 from datetime import datetime
-import streamlit.components.v1 as components # <--- IMPORTANTE PARA MOSTRAR TICKET
+import streamlit.components.v1 as components
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
 import styles
@@ -35,6 +35,10 @@ if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
 
+# --- DATOS DEL NEGOCIO PARA EL RECIBO ---
+DIRECCION_NEGOCIO = "Calle A. García #1128, Cochabamba"
+TELEFONO_NEGOCIO = "591 77420111"
+
 # --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", use_container_width=True)
@@ -48,7 +52,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.2 | Universal Print")
+    st.caption("MeatOS v4.3 | Pro Receipt")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -139,14 +143,18 @@ with tab1:
             b1, b2 = st.columns([1, 2])
             if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
             if b2.button("✅ COBRAR", type="primary", disabled=not cobrar):
-                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                now_dt = datetime.now()
+                now_str = now_dt.strftime("%Y-%m-%d %H:%M")
+                # Generar ID de Recibo Único
+                recibo_id = f"#REC-{now_dt.strftime('%Y%m%d-%H%M%S')}"
+
                 detalles = []
                 for item in st.session_state['carrito']:
                     idx = st.session_state['productos'].index[st.session_state['productos']['Producto'] == item['Producto']].tolist()[0]
                     curr = float(st.session_state['productos'].at[idx, 'StockActual'])
                     st.session_state['productos'].at[idx, 'StockActual'] = curr - item['Cantidad']
                     gan = (item['PrecioUnit'] - item['CostoUnit']) * item['Cantidad']
-                    detalles.append({'Fecha': now, 'Producto': item['Producto'], 'Categoria': item['Categoria'], 'PesoKg': item['Cantidad'], 'CostoUnit': item['CostoUnit'], 'PrecioVentaUnit': item['PrecioUnit'], 'Subtotal': item['Subtotal'], 'Ganancia': gan})
+                    detalles.append({'Fecha': now_str, 'Producto': item['Producto'], 'Categoria': item['Categoria'], 'PesoKg': item['Cantidad'], 'CostoUnit': item['CostoUnit'], 'PrecioVentaUnit': item['PrecioUnit'], 'Subtotal': item['Subtotal'], 'Ganancia': gan})
                 
                 backend.guardar_data(sheet, "productos", st.session_state['productos'])
                 if detalles:
@@ -154,13 +162,13 @@ with tab1:
                     backend.guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
                 txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
-                fin = pd.DataFrame([{'Fecha': now, 'Detalle': f"Venta: {txt}", 'Tipo': "Ingreso", 'Monto': total, 'MetodoPago': metodo, 'Ganancia': total_ganancia}])
+                fin = pd.DataFrame([{'Fecha': now_str, 'Detalle': f"Venta {recibo_id}: {txt}", 'Tipo': "Ingreso", 'Monto': total, 'MetodoPago': metodo, 'Ganancia': total_ganancia}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], fin], ignore_index=True)
                 
                 if metodo == "💵 Efectivo" and qr_vuelto and cambio > 0:
                     swap = pd.DataFrame([
-                        {'Fecha': now, 'Detalle': "Exc. Billete (Swap)", 'Tipo': "Ingreso", 'Monto': cambio, 'MetodoPago': "Efectivo", 'Ganancia': 0},
-                        {'Fecha': now, 'Detalle': "Devolución Cambio", 'Tipo': "Egreso", 'Monto': -cambio, 'MetodoPago': "QR", 'Ganancia': 0}
+                        {'Fecha': now_str, 'Detalle': f"Exc. Billete (Swap) {recibo_id}", 'Tipo': "Ingreso", 'Monto': cambio, 'MetodoPago': "Efectivo", 'Ganancia': 0},
+                        {'Fecha': now_str, 'Detalle': f"Devolución Cambio {recibo_id}", 'Tipo': "Egreso", 'Monto': -cambio, 'MetodoPago': "QR", 'Ganancia': 0}
                     ])
                     st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], swap], ignore_index=True)
                 
@@ -168,9 +176,11 @@ with tab1:
                 
                 # --- GENERAR TICKETS ---
                 lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
-                msg = f"*** EL CORTE BENIANO ***%0AFecha: {now}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
+                msg = f"*** EL CORTE BENIANO ***%0ARecibo: {recibo_id}%0AFecha: {now_str}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg}" if cel else f"https://wa.me/?text={msg}"
-                html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now, metodo)
+                
+                # GENERAR HTML PREMIUM
+                html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO)
 
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
                 st.session_state['carrito'] = []
@@ -179,23 +189,19 @@ with tab1:
         else:
             st.info("Carrito vacío.")
 
-    # --- MOSTRAR TICKET DESPUÉS DE LA VENTA ---
+    # --- MOSTRAR TICKET ---
     if st.session_state['ultimo_ticket']:
         st.success("✅ Venta Exitosa")
-        
         c_t1, c_t2 = st.columns([1, 1])
-        
         with c_t1:
             st.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
             st.write("")
             if st.button("❌ CERRAR / NUEVA VENTA"): 
                 st.session_state['ultimo_ticket'] = None
                 st.rerun()
-
         with c_t2:
-            st.caption("Vista Previa (Se imprimirá automático):")
-            # AQUÍ SE DIBUJA EL TICKET EN PANTALLA
-            components.html(st.session_state['ultimo_ticket']['html_raw'], height=400, scrolling=True)
+            st.caption("Vista Previa:")
+            components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
 
     st.divider()
     st.subheader("📊 Arqueo (Hoy)")
