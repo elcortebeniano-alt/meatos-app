@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import os
-from datetime import datetime, timedelta # <--- IMPORTANTE: Agregamos timedelta
+from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
@@ -17,7 +17,6 @@ styles.cargar_css()
 
 # --- FUNCIÓN MAESTRA DE HORA BOLIVIANA (UTC - 4) ---
 def get_bolivia_time():
-    # Toma la hora universal y resta 4 horas
     return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 
 def get_bolivia_date():
@@ -60,7 +59,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.4 | Hora Bolivia")
+    st.caption("MeatOS v4.5 | Full Finance")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -86,7 +85,6 @@ with tab1:
             if monto > 0:
                 signo = -1 if "Salida" in tipo else 1
                 tipo_bd = "Egreso" if "Salida" in tipo else "Ingreso"
-                # AQUI USAMOS LA HORA BOLIVIANA
                 nuevo = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[CAJA] {detalle}", 'Tipo': tipo_bd, 'Monto': monto * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
@@ -154,9 +152,7 @@ with tab1:
             b1, b2 = st.columns([1, 2])
             if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
             if b2.button("✅ COBRAR", type="primary", disabled=not cobrar):
-                # AQUI USAMOS LA HORA BOLIVIANA
                 now_str = get_bolivia_time()
-                # ID Único basado en hora Bolivia
                 recibo_id = f"#REC-{now_str.replace('-','').replace(':','').replace(' ','-')}"
 
                 detalles = []
@@ -185,11 +181,9 @@ with tab1:
                 
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                # --- GENERAR TICKETS ---
                 lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
                 msg = f"*** EL CORTE BENIANO ***%0ARecibo: {recibo_id}%0AFecha: {now_str}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg}" if cel else f"https://wa.me/?text={msg}"
-                
                 html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO)
 
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
@@ -199,7 +193,6 @@ with tab1:
         else:
             st.info("Carrito vacío.")
 
-    # --- MOSTRAR TICKET ---
     if st.session_state['ultimo_ticket']:
         st.success("✅ Venta Exitosa")
         c_t1, c_t2 = st.columns([1, 1])
@@ -215,7 +208,6 @@ with tab1:
 
     st.divider()
     st.subheader("📊 Arqueo (Hoy)")
-    # AQUI USAMOS LA FECHA BOLIVIANA
     hoy = get_bolivia_date()
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     if not df_hoy.empty:
@@ -225,7 +217,7 @@ with tab1:
         c1.metric("Ventas Totales", f"{(v_qr + v_efec):.2f} Bs")
         c2.metric("EFECTIVO CAJA", f"{v_efec:.2f} Bs")
 
-# === ADMIN ===
+# === ADMIN (GERENCIA) ===
 if st.session_state['admin_mode']:
     with tab2:
         st.header("📦 Inventario")
@@ -247,19 +239,34 @@ if st.session_state['admin_mode']:
         st.header("📊 Gerencia")
         df_f = st.session_state['finanzas']
         if not df_f.empty and 'Ganancia' in df_f.columns:
+            
+            # --- FILA 1: RENTABILIDAD (GANANCIAS) ---
+            st.subheader("📈 Rentabilidad")
             df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
             df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
             
-            # FECHA BOLIVIA PARA CALCULOS
             now = datetime.utcnow() - timedelta(hours=4)
-            
             g_hoy = df_f[df_f['Fecha_dt'].dt.date == now.date()]['Ganancia'].sum()
             g_mes = df_f[(df_f['Fecha_dt'].dt.month == now.month) & (df_f['Fecha_dt'].dt.year == now.year)]['Ganancia'].sum()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Ganancia HOY", f"{g_hoy:.2f} Bs")
-            c2.metric("Ganancia MES", f"{g_mes:.2f} Bs")
-            efec = df_f[df_f['MetodoPago'].str.contains('Efectivo', na=False)]['Monto'].sum()
-            c3.metric("CAJA EFECTIVO", f"{efec:.2f} Bs")
+            
+            k1, k2 = st.columns(2)
+            k1.metric("Ganancia HOY", f"{g_hoy:.2f} Bs")
+            k2.metric("Ganancia MES", f"{g_mes:.2f} Bs")
+            
+            st.markdown("---")
+
+            # --- FILA 2: TESORERÍA (SALDOS REALES) ---
+            st.subheader("🏦 Tesorería (Saldos Acumulados)")
+            
+            # Calculamos los saldos sumando los montos (que ya incluyen egresos como negativos)
+            total_efectivo = df_f[df_f['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
+            total_banco = df_f[df_f['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
+            total_global = df_f['Monto'].sum()
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("💵 EN CAJA (Efectivo)", f"{total_efectivo:.2f} Bs")
+            m2.metric("📱 EN BANCO (QR)", f"{total_banco:.2f} Bs")
+            m3.metric("💰 TOTAL ACUMULADO", f"{total_global:.2f} Bs")
         
         st.divider()
         with st.container(border=True):
@@ -268,7 +275,6 @@ if st.session_state['admin_mode']:
             tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True)
             if st.button("Registrar") and mont > 0:
                 s = -1 if tipo == "Egreso" else 1
-                # AQUI USAMOS LA HORA BOLIVIANA
                 n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
