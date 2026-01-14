@@ -1,9 +1,9 @@
-import streamlit.components.v1 as components
 import streamlit as st
 import pandas as pd
 import time
 import os
 from datetime import datetime
+import streamlit.components.v1 as components # <--- IMPORTANTE PARA MOSTRAR TICKET
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
 import styles
@@ -48,7 +48,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.1 | Print Ready")
+    st.caption("MeatOS v4.2 | Universal Print")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -170,37 +170,32 @@ with tab1:
                 lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
                 msg = f"*** EL CORTE BENIANO ***%0AFecha: {now}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg}" if cel else f"https://wa.me/?text={msg}"
-                link_html = backend.generar_html_ticket(st.session_state['carrito'], total, now, metodo)
+                html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now, metodo)
 
-                st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'link_html': link_html}
+                st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
                 st.session_state['carrito'] = []
                 st.balloons(); st.success("¡Cobrado!"); time.sleep(1); st.rerun()
 
         else:
             st.info("Carrito vacío.")
 
-    # --- MOSTRAR BOTONES DE TICKET SI EXISTEN ---
+    # --- MOSTRAR TICKET DESPUÉS DE LA VENTA ---
     if st.session_state['ultimo_ticket']:
         st.success("✅ Venta Exitosa")
         
         c_t1, c_t2 = st.columns([1, 1])
         
         with c_t1:
-            # Botón WhatsApp
             st.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
-            
+            st.write("")
             if st.button("❌ CERRAR / NUEVA VENTA"): 
                 st.session_state['ultimo_ticket'] = None
                 st.rerun()
 
         with c_t2:
-            st.caption("Vista Previa del Ticket:")
-            # AQUÍ ESTÁ LA MAGIA: Renderizamos el ticket dentro de la app
-            # Esto ejecutará el window.print() automáticamente
+            st.caption("Vista Previa (Se imprimirá automático):")
+            # AQUÍ SE DIBUJA EL TICKET EN PANTALLA
             components.html(st.session_state['ultimo_ticket']['html_raw'], height=400, scrolling=True)
-        """
-        col_t2.markdown(html_btn, unsafe_allow_html=True)
-        if st.button("Cerrar Ticket"): st.session_state['ultimo_ticket'] = None; st.rerun()
 
     st.divider()
     st.subheader("📊 Arqueo (Hoy)")
@@ -213,7 +208,7 @@ with tab1:
         c1.metric("Ventas Totales", f"{(v_qr + v_efec):.2f} Bs")
         c2.metric("EFECTIVO CAJA", f"{v_efec:.2f} Bs")
 
-# === ADMIN (INVENTARIO + FINANZAS) ===
+# === ADMIN ===
 if st.session_state['admin_mode']:
     with tab2:
         st.header("📦 Inventario")
@@ -226,7 +221,6 @@ if st.session_state['admin_mode']:
                     st.session_state['productos'] = pd.concat([st.session_state['productos'], nuevo], ignore_index=True)
                     backend.guardar_data(sheet, "productos", st.session_state['productos'])
                     st.success("Guardado"); time.sleep(1); st.rerun()
-        
         st.divider()
         df_ed = st.data_editor(st.session_state['productos'], num_rows="dynamic", use_container_width=True, key="inv_ed")
         if st.button("💾 Guardar Cambios"):
@@ -244,10 +238,7 @@ if st.session_state['admin_mode']:
             c1, c2, c3 = st.columns(3)
             c1.metric("Ganancia HOY", f"{g_hoy:.2f} Bs")
             c2.metric("Ganancia MES", f"{g_mes:.2f} Bs")
-            
-            # Saldos Reales
             efec = df_f[df_f['MetodoPago'].str.contains('Efectivo', na=False)]['Monto'].sum()
-            qr = df_f[df_f['MetodoPago'].str.contains('QR', na=False) | df_f['MetodoPago'].str.contains('Banco', na=False)]['Monto'].sum()
             c3.metric("CAJA EFECTIVO", f"{efec:.2f} Bs")
         
         st.divider()
@@ -261,10 +252,7 @@ if st.session_state['admin_mode']:
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Listo"); time.sleep(1); st.rerun()
-        
         st.divider()
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
-
-
