@@ -9,13 +9,18 @@ import streamlit.components.v1 as components
 import styles
 import backend
 
-# CONFIGURACIÓN
-st.set_page_config(page_title="El Corte Beniano | POS", layout="wide", page_icon="🥩", initial_sidebar_state="expanded")
+# CONFIGURACIÓN DE PÁGINA
+st.set_page_config(
+    page_title="El Corte Beniano | POS", 
+    layout="wide", 
+    page_icon="🥩", 
+    initial_sidebar_state="expanded"
+)
 
 # 1. CARGAR DISEÑO
 styles.cargar_css()
 
-# --- FUNCIÓN MAESTRA DE HORA BOLIVIANA (UTC - 4) ---
+# --- FUNCIONES DE HORA ---
 def get_bolivia_time():
     return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 
@@ -59,7 +64,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.5 | Full Finance")
+    st.caption("MeatOS v4.6 | Final Stable")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -68,7 +73,9 @@ if st.session_state['admin_mode']:
 else:
     tab1, = st.tabs(["🛒 PUNTO DE VENTA"])
 
-# === PESTAÑA 1: VENTA ===
+# ==============================================================================
+# PESTAÑA 1: VENTA
+# ==============================================================================
 with tab1:
     st.title("Caja Registradora")
     
@@ -76,10 +83,10 @@ with tab1:
     with st.expander("💸 Gastos / Movimientos de Caja"):
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         opciones = ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"]
-        motivo = c1.selectbox("Motivo", opciones, label_visibility="collapsed")
-        detalle = motivo if motivo != "Otro" else c1.text_input("Detalle:")
-        monto = c2.number_input("Monto Bs", 0.0, step=1.0)
-        tipo = c3.radio("Tipo", ["Salida", "Entrada"], horizontal=True, label_visibility="collapsed")
+        motivo = c1.selectbox("Motivo", opciones, label_visibility="collapsed", key="sel_motivo_caja")
+        detalle = motivo if motivo != "Otro" else c1.text_input("Detalle:", key="input_detalle_caja")
+        monto = c2.number_input("Monto Bs", 0.0, step=1.0, key="input_monto_caja")
+        tipo = c3.radio("Tipo", ["Salida", "Entrada"], horizontal=True, label_visibility="collapsed", key="radio_tipo_caja")
         
         if c4.button("Registrar", key="btn_caja"):
             if monto > 0:
@@ -91,6 +98,8 @@ with tab1:
                 st.success("✅ Registrado"); time.sleep(1); st.rerun()
 
     st.divider()
+    
+    # INTERFAZ DE VENTA
     col_izq, col_der = st.columns([1.2, 1.8], gap="large")
 
     with col_izq:
@@ -98,21 +107,22 @@ with tab1:
         df_prod = st.session_state['productos']
         if not df_prod.empty:
             lista = sorted(df_prod[df_prod['Producto'] != ""]['Producto'].unique())
-            prod_sel = st.selectbox("Buscar Producto...", lista)
+            prod_sel = st.selectbox("Buscar Producto...", lista, key="sel_producto_venta")
             if prod_sel:
                 data = df_prod[df_prod['Producto'] == prod_sel].iloc[0]
                 precio_base = float(data['PrecioVenta'])
                 with st.container(border=True):
-                    check = st.checkbox("🔓 Modificar Precio")
-                    precio_final = st.number_input("Precio Venta", value=precio_base, step=0.5) if check else precio_base
+                    check = st.checkbox("🔓 Modificar Precio", key="check_precio_manual")
+                    precio_final = st.number_input("Precio Venta", value=precio_base, step=0.5, key="input_precio_final") if check else precio_base
                     st.metric("Stock Disp.", f"{float(data.get('StockActual',0.0)):.3f} Kg")
                 
                 st.write("⚖️ **Peso (g):**")
+                # El key del peso es dinámico para resetearse
                 gr = st.number_input("Gramos", 0, step=10, key=f"peso_{st.session_state['reset_counter']}", label_visibility="collapsed")
                 kg = gr / 1000
                 if kg > 0: st.info(f"Total: **{(precio_final*kg):.2f} Bs** ({kg:.3f} Kg)")
                 
-                if st.button("AGREGAR ➕", type="primary"):
+                if st.button("AGREGAR ➕", type="primary", key="btn_add_carrito"):
                     if gr > 0 and kg <= float(data.get('StockActual',0.0)):
                         st.session_state['carrito'].append({
                             "Producto": prod_sel, "Categoria": str(data.get('Categoria','Gen')), "Cantidad": kg,
@@ -135,23 +145,23 @@ with tab1:
             
             st.write("---")
             c1, c2 = st.columns([1, 1.5])
-            cel = c1.text_input("📱 WhatsApp", placeholder="70712345")
-            metodo = c2.radio("Pago", ["💵 Efectivo", "📱 QR / Banco"], horizontal=True)
+            cel = c1.text_input("📱 WhatsApp", placeholder="70712345", key="input_celular")
+            metodo = c2.radio("Pago", ["💵 Efectivo", "📱 QR / Banco"], horizontal=True, key="radio_metodo_pago")
             
             pago, cambio, qr_vuelto, cobrar = 0.0, 0.0, False, True
             if metodo == "💵 Efectivo":
-                pago = st.number_input("Recibido:", 0.0, step=0.5)
+                pago = st.number_input("Recibido:", 0.0, step=0.5, key="input_pago_cliente")
                 if pago >= total:
                     cambio = pago - total
                     st.info(f"💰 Vuelto: **{cambio:.2f} Bs**")
-                    if cambio > 0: qr_vuelto = st.checkbox("🔄 Vuelto por QR")
+                    if cambio > 0: qr_vuelto = st.checkbox("🔄 Vuelto por QR", key="check_vuelto_qr")
                 else: 
                     if pago > 0: st.error(f"Falta: {total-pago:.2f}"); cobrar = False
                     else: st.warning("Ingrese monto"); cobrar = False
             
             b1, b2 = st.columns([1, 2])
-            if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
-            if b2.button("✅ COBRAR", type="primary", disabled=not cobrar):
+            if b1.button("🗑️", key="btn_borrar_carrito"): st.session_state['carrito'] = []; st.rerun()
+            if b2.button("✅ COBRAR", type="primary", disabled=not cobrar, key="btn_cobrar_final"):
                 now_str = get_bolivia_time()
                 recibo_id = f"#REC-{now_str.replace('-','').replace(':','').replace(' ','-')}"
 
@@ -199,7 +209,7 @@ with tab1:
         with c_t1:
             st.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
             st.write("")
-            if st.button("❌ CERRAR / NUEVA VENTA"): 
+            if st.button("❌ CERRAR / NUEVA VENTA", key="btn_cerrar_ticket"): 
                 st.session_state['ultimo_ticket'] = None
                 st.rerun()
         with c_t2:
@@ -217,7 +227,9 @@ with tab1:
         c1.metric("Ventas Totales", f"{(v_qr + v_efec):.2f} Bs")
         c2.metric("EFECTIVO CAJA", f"{v_efec:.2f} Bs")
 
-# === ADMIN (GERENCIA) ===
+# ==============================================================================
+# PESTAÑA 2: INVENTARIO (ADMIN)
+# ==============================================================================
 if st.session_state['admin_mode']:
     with tab2:
         st.header("📦 Inventario")
@@ -232,10 +244,12 @@ if st.session_state['admin_mode']:
                     st.success("Guardado"); time.sleep(1); st.rerun()
         st.divider()
         df_ed = st.data_editor(st.session_state['productos'], num_rows="dynamic", use_container_width=True, key="inv_ed")
-        if st.button("💾 Guardar Cambios"):
+        if st.button("💾 Guardar Cambios Inventario", key="btn_save_inv"):
             st.session_state['productos'] = df_ed; backend.guardar_data(sheet, "productos", df_ed); st.success("Listo"); time.sleep(1); st.rerun()
 
-# === PESTAÑA 3: GERENCIA (REPORTES AVANZADOS) ===
+# ==============================================================================
+# PESTAÑA 3: GERENCIA (ADMIN)
+# ==============================================================================
     with tab3:
         st.header("📊 Gerencia & Reportes")
         
@@ -246,7 +260,7 @@ if st.session_state['admin_mode']:
             df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
             df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
             
-            # --- 1. FILTRO DE FECHAS ---
+            # 1. FILTRO
             with st.container(border=True):
                 c_filtro1, c_filtro2 = st.columns([2, 1])
                 with c_filtro1:
@@ -259,14 +273,11 @@ if st.session_state['admin_mode']:
                         value=(start_month, today),
                         max_value=today,
                         format="DD/MM/YYYY",
-                        key="filtro_fechas_gerencia_v2" # <--- KEY ÚNICO
+                        key="filtro_fechas_gerencia_final" # KEY UNICO
                     )
-                
                 with c_filtro2:
-                    st.write("")
-                    st.info("Selecciona 'Inicio' y 'Fin' para filtrar.")
+                    st.write(""); st.info("Selecciona 'Inicio' y 'Fin'.")
 
-            # LÓGICA DE FILTRADO
             if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
                 inicio, fin = rango_fechas
                 mask = (df_f['Fecha_dt'].dt.date >= inicio) & (df_f['Fecha_dt'].dt.date <= fin)
@@ -278,7 +289,7 @@ if st.session_state['admin_mode']:
 
             st.divider()
 
-            # --- 2. TARJETAS DE RESULTADOS (KPIs) ---
+            # 2. KPIS
             ganancia_periodo = df_filtrado['Ganancia'].sum()
             efectivo_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
             banco_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
@@ -293,144 +304,43 @@ if st.session_state['admin_mode']:
             
             st.divider()
 
-            # --- 3. TABLA Y EXPORTACIÓN ---
+            # 3. TABLA Y EXPORT
             c_table, c_export = st.columns([3, 1])
-            
             with c_table:
                 st.subheader("📒 Detalle de Movimientos")
-                df_editor = st.data_editor(
-                    df_filtrado, 
-                    num_rows="dynamic", 
-                    use_container_width=True, 
-                    key="fin_ed_filter_v2", # <--- KEY ÚNICO
-                    column_config={"Fecha_dt": None}
-                )
+                df_editor = st.data_editor(df_filtrado, num_rows="dynamic", use_container_width=True, key="fin_ed_filter_final", column_config={"Fecha_dt": None})
 
             with c_export:
                 st.subheader("📂 Descargas")
-                st.write("Exportar selección:")
-                
-                # BOTÓN 1: DESCARGAR FILTRADO
                 csv_filtrado = df_editor.to_csv(index=False, sep=';').encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Descargar Reporte",
-                    data=csv_filtrado,
-                    file_name="Reporte_Filtrado.csv",
-                    mime='text/csv',
-                    type="primary",
-                    key="btn_descarga_filtrado_v2" # <--- KEY ÚNICO
-                )
-                
+                st.download_button("📥 Descargar Reporte", data=csv_filtrado, file_name="Reporte.csv", mime='text/csv', type="primary", key="btn_dl_1")
                 st.divider()
                 st.caption("Seguridad:")
-                # BOTÓN 2: BACKUP TOTAL
                 csv_total = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
-                st.download_button(
-                    label="📦 Backup Total",
-                    data=csv_total,
-                    file_name=f"BACKUP_TOTAL_{today.strftime('%Y%m%d')}.csv",
-                    mime='text/csv',
-                    key="btn_descarga_total_v2" # <--- KEY ÚNICO
-                )
+                st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
 
-            # GUARDAR CAMBIOS
-            if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia_v2"): # <--- KEY ÚNICO
+            if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia_final"):
                 st.session_state['finanzas'].update(df_editor)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("Base de datos actualizada.")
-                time.sleep(1.5); st.rerun()
+                st.success("Actualizado."); time.sleep(1.5); st.rerun()
 
         else:
-            st.info("No hay datos financieros para mostrar.")
+            st.info("Sin datos.")
 
         st.divider()
 
-        # --- REGISTRO MANUAL ADMIN ---
+        # 4. REGISTRO MANUAL (CON KEYS ÚNICOS PARA EVITAR ERROR)
         with st.container(border=True):
             st.subheader("📝 Registrar Gasto/Ingreso Admin")
             c1, c2 = st.columns(2)
+            # AQUI ESTÁN LOS KEYS ÚNICOS QUE EVITAN EL ERROR
+            desc = c1.text_input("Descripción", key="input_desc_admin_final") 
+            mont = c2.number_input("Monto", 0.0, key="input_monto_admin_final")
+            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin_final")
             
-            # --- AQUÍ ESTABA EL PROBLEMA ---
-            # Le agregamos key="..._admin" para diferenciarlo del "Monto" de la Caja Chica
-            desc = c1.text_input("Descripción", key="desc_input_admin") 
-            mont = c2.number_input("Monto", 0.0, key="monto_input_admin")
-            
-            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="tipo_radio_admin")
-            
-            if st.button("Registrar Movimiento", key="btn_reg_admin") and mont > 0:
+            if st.button("Registrar Movimiento", key="btn_reg_admin_final") and mont > 0:
                 s = -1 if tipo == "Egreso" else 1
                 n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Registrado"); time.sleep(1); st.rerun()
-
-        # --- REGISTRO MANUAL ADMIN ---
-        with st.container(border=True):
-            st.subheader("📝 Registrar Gasto/Ingreso Admin")
-            c1, c2 = st.columns(2)
-            
-            # AQUÍ ESTABA EL ERROR: AGREGAMOS KEYS ÚNICOS
-            desc = c1.text_input("Descripción", key="input_desc_admin") 
-            mont = c2.number_input("Monto", 0.0, key="input_monto_admin")
-            
-            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin")
-            
-            if st.button("Registrar Movimiento", key="btn_reg_admin") and mont > 0:
-                s = -1 if tipo == "Egreso" else 1
-                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
-                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
-                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("Registrado"); time.sleep(1); st.rerun()
-
-        # --- REGISTRO MANUAL ADMIN (Siempre útil) ---
-        with st.container(border=True):
-            st.subheader("📝 Registrar Gasto/Ingreso Admin")
-            c1, c2 = st.columns(2); desc = c1.text_input("Descripción"); mont = c2.number_input("Monto", 0.0)
-            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True)
-            if st.button("Registrar Movimiento") and mont > 0:
-                s = -1 if tipo == "Egreso" else 1
-                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
-                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
-                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("Registrado"); time.sleep(1); st.rerun()
-        
-# --- NUEVO: BOTÓN PARA EL BANCO (CORREGIDO PARA EXCEL BOLIVIA) ---
-        st.subheader("📂 Exportar para Banco / Contador")
-        col_down1, col_down2 = st.columns([2,1])
-        with col_down1:
-            st.caption("Descarga el historial completo (Libro Diario). Formato corregido para Excel.")
-        with col_down2:
-            # CORRECCIÓN: Usamos sep=';' para columnas y encoding='utf-8-sig' para tildes/ñ
-            csv = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
-            
-            st.download_button(
-                label="📥 Descargar Excel (Corregido)",
-                data=csv,
-                file_name=f"MeatOS_LibroDiario_{datetime.now().strftime('%Y-%m-%d')}.csv",
-                mime='text/csv',
-                type="primary"
-            )
-
-        st.divider()
-        
-        # Movimiento Admin
-        with st.container(border=True):
-            st.subheader("📝 Movimiento Admin")
-            c1, c2 = st.columns(2); desc = c1.text_input("Desc"); mont = c2.number_input("Monto", 0.0)
-            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True)
-            if st.button("Registrar") and mont > 0:
-                s = -1 if tipo == "Egreso" else 1
-                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
-                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
-                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("Listo"); time.sleep(1); st.rerun()
-        
-        st.divider()
-        df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
-        if st.button("💾 Guardar Finanzas"):
-            st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
-
-
-
-
-
