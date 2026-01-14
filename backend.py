@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
-import base64 # <--- NECESARIO PARA EL LOGO
+import base64
 
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -54,94 +54,125 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- FUNCIÓN PARA CARGAR EL LOGO EN BASE64 ---
 def get_image_base64(path):
     try:
         with open(path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
         return f"data:image/png;base64,{encoded_string}"
     except:
-        return "" # Si no hay logo, no pone nada
+        return ""
 
-# --- GENERADOR DE TICKET "PREMIUM" (ESTILO IMAGEN) ---
+# --- GENERADOR DE TICKET (CALIBRADO 58MM) ---
 def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono):
     
-    # 1. Cargar Logo
+    # Cargar Logo
     logo_b64 = get_image_base64("Logo-Final.png")
-    img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 60px; height: auto;">' if logo_b64 else ""
+    # Ajustamos el tamaño del logo para que no empuje el texto
+    img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 45px; height: auto;">' if logo_b64 else ""
 
-    # 2. Generar lista de ítems con nuevo diseño
     items_html = ""
     for item in carrito:
         items_html += f"""
-        <div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
-            <div style="font-weight: bold; font-size: 12px; color: #333;">{item['Producto']}</div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #666;">
-                <div>{item['Cantidad']:.3f} kg x {item['PrecioUnit']:.2f} Bs</div>
-                <div style="font-weight: bold; color: #333;">{item['Subtotal']:.2f} Bs</div>
+        <div style="margin-bottom: 6px; border-bottom: 1px dashed #ccc; padding-bottom: 4px;">
+            <div style="font-weight: bold; font-size: 11px; color: #000;">{item['Producto']}</div>
+            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #333;">
+                <div>{item['Cantidad']:.3f} x {item['PrecioUnit']:.2f}</div>
+                <div style="font-weight: bold;">{item['Subtotal']:.2f}</div>
             </div>
         </div>
         """
 
-    # 3. HTML COMPLETO
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset="UTF-8">
         <style>
-            @page {{ margin: 0; size: 58mm auto; }}
-            body {{
-                margin: 0; padding: 8px; width: 100%;
-                background-color: #fff; font-family: 'Helvetica', 'Arial', sans-serif;
-                color: #333;
+            /* CONFIGURACIÓN CRÍTICA DE PÁGINA */
+            @page {{
+                margin: 0;
+                size: 58mm auto; /* Forzar ancho de papel térmico */
             }}
-            .no-print {{ text-align: center; margin-bottom: 10px; }}
-            button {{ background-color: #000; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }}
             
-            /* Header con Logo y Título */
-            .header-grid {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }}
-            .logo-container {{ flex: 0 0 auto; margin-right: 10px; }}
-            .biz-info {{ flex: 1; text-align: right; }}
-            .biz-name {{ font-size: 14px; font-weight: bold; margin: 0; color: #8B0000; }}
-            .biz-details {{ font-size: 9px; color: #666; margin: 2px 0; }}
-            .receipt-id {{ font-size: 12px; font-weight: bold; margin-top: 5px; }}
+            body {{
+                font-family: 'Helvetica', 'Arial', sans-serif;
+                margin: 0;
+                padding: 2px;
+                width: 100%;
+                max-width: 48mm; /* Ancho máximo seguro de impresión */
+                background-color: #fff;
+                color: #000;
+                font-size: 10px; /* Letra base pequeña */
+            }}
+
+            /* Contenedor Flex para Header */
+            .header-container {{
+                display: flex;
+                align-items: center; /* Centrado vertical */
+                justify-content: space-between;
+                margin-bottom: 10px;
+                border-bottom: 2px solid #000;
+                padding-bottom: 5px;
+            }}
             
-            .section-title {{ font-size: 11px; font-weight: bold; border-bottom: 2px solid #333; padding-bottom: 4px; margin: 10px 0; }}
+            .logo-box {{ flex: 0 0 50px; }} /* Espacio fijo para logo */
+            .info-box {{ flex: 1; text-align: right; padding-left: 5px; }}
             
+            .biz-name {{ font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; }}
+            .biz-meta {{ font-size: 9px; margin: 1px 0; display: block; }}
+            .recibo-id {{ font-size: 10px; font-weight: bold; margin-top: 2px; display: block; }}
+
+            .section-title {{ 
+                font-size: 10px; font-weight: bold; 
+                text-transform: uppercase; 
+                margin: 5px 0; border-bottom: 1px solid #000; 
+            }}
+
             /* Totales */
-            .totals-container {{ margin-top: 15px; text-align: right; }}
-            .total-line {{ font-size: 16px; font-weight: bold; margin: 5px 0; }}
-            .payment-line {{ font-size: 11px; color: #666; }}
+            .totals-box {{ 
+                margin-top: 10px; 
+                text-align: right; 
+                border-top: 1px solid #000; 
+                padding-top: 5px; 
+            }}
+            .total-big {{ font-size: 14px; font-weight: bold; }}
             
-            .footer {{ text-align: center; margin-top: 20px; font-size: 10px; color: #666; border-top: 1px solid #eee; padding-top: 10px; }}
+            .footer {{ 
+                text-align: center; margin-top: 15px; 
+                font-size: 9px; 
+            }}
+            
+            .no-print {{ text-align: center; margin-bottom: 10px; }}
+            button {{ background:#000; color:#fff; border:none; padding:5px 10px; border-radius:4px; font-size:10px; }}
 
             @media print {{ .no-print {{ display: none; }} }}
         </style>
     </head>
     <body>
-        <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR TICKET</button></div>
+        <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR</button></div>
 
-        <div class="header-grid">
-            <div class="logo-container">{img_tag}</div>
-            <div class="biz-info">
-                <p class="biz-name">EL CORTE BENIANO</p>
-                <p class="biz-details">{direccion}</p>
-                <p class="biz-details">Tel: {telefono}</p>
-                <p class="receipt-id">{recibo_id}</p>
+        <div class="header-container">
+            <div class="logo-box">{img_tag}</div>
+            <div class="info-box">
+                <span class="biz-name">El Corte Beniano</span>
+                <span class="biz-meta">{direccion}</span>
+                <span class="biz-meta">{telefono}</span>
+                <span class="recibo-id">{recibo_id}</span>
             </div>
         </div>
+
+        <div class="section-title">DETALLE DE COMPRA</div>
         
-        <div class="section-title">Detalle de Compra ({len(carrito)} ítems)</div>
         <div>{items_html}</div>
-        
-        <div class="totals-container">
-            <div class="total-line">Total: {total:.2f} Bs</div>
-            <div class="payment-line">Pago: {metodo}</div>
+
+        <div class="totals-box">
+            <div class="total-big">Total: {total:.2f} Bs</div>
+            <div style="font-size: 10px;">Pago: {metodo}</div>
         </div>
-        
+
         <div class="footer">
-            <p style="font-weight: bold; margin: 0;">¡Gracias por su compra!</p>
-            <p style="margin: 2px 0;">{fecha}</p>
+            <p style="margin:0; font-weight:bold;">¡Gracias por su compra!</p>
+            <p style="margin:2px 0;">{fecha}</p>
         </div>
 
         <script>
