@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import os
 from datetime import datetime, timedelta
+from urllib.parse import quote # <--- NUEVA IMPORTACIÓN PARA WHATSAPP
 import streamlit.components.v1 as components
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
@@ -44,6 +45,7 @@ if 'ultimo_ticket' not in st.session_state: st.session_state['ultimo_ticket'] = 
 if 'admin_mode' not in st.session_state: st.session_state['admin_mode'] = False
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
 
+# LIMPIEZA INICIAL PARA EVITAR ERRORES DE JSON
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
 
@@ -64,7 +66,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.7 | Delete Fixed")
+    st.caption("MeatOS v4.8 | Stable Fixes")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -190,9 +192,15 @@ with tab1:
                 
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
-                msg = f"*** EL CORTE BENIANO ***%0ARecibo: {recibo_id}%0AFecha: {now_str}%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
-                link_wa = f"https://wa.me/591{cel.strip()}?text={msg}" if cel else f"https://wa.me/?text={msg}"
+                # --- ARREGLO WHATSAPP ---
+                # Usamos \n normal y luego 'quote' para codificarlo correctamente
+                lineas_txt = "\n".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
+                msg_txt = f"*** EL CORTE BENIANO ***\nRecibo: {recibo_id}\nFecha: {now_str}\n{lineas_txt}\n----------------\nTOTAL: {total:.2f} Bs\nPago: {metodo}"
+                
+                # Codificación profesional para URL
+                msg_encoded = quote(msg_txt)
+                link_wa = f"https://wa.me/591{cel.strip()}?text={msg_encoded}" if cel else f"https://wa.me/?text={msg_encoded}"
+                
                 html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO)
 
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
@@ -313,30 +321,30 @@ if st.session_state['admin_mode']:
 
             with c_export:
                 st.subheader("📂 Descargas")
-                csv_filtrado = df_editor.to_csv(index=False, sep=';').encode('utf-8-sig')
+                # Eliminar columna auxiliar antes de descargar
+                df_dl = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
+                csv_filtrado = df_dl.to_csv(index=False, sep=';').encode('utf-8-sig')
                 st.download_button("📥 Descargar Reporte", data=csv_filtrado, file_name="Reporte.csv", mime='text/csv', type="primary", key="btn_dl_1")
                 st.divider()
                 st.caption("Seguridad:")
-                csv_total = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
+                csv_total = df_f.drop(columns=['Fecha_dt'], errors='ignore').to_csv(index=False, sep=';').encode('utf-8-sig')
                 st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
 
-            # --- BOTÓN DE GUARDADO CORREGIDO (LÓGICA DE REEMPLAZO) ---
+            # --- BOTÓN DE GUARDADO CORREGIDO (ARREGLO JSON ERROR) ---
             if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia_final"):
-                # 1. Obtener los índices de lo que estábamos viendo (filtro)
+                # 1. Obtener índices originales del filtro
                 indices_originales = df_filtrado.index
-                
-                # 2. Borrar esas filas de la base maestra (st.session_state['finanzas'])
+                # 2. Borrar de la base maestra
                 st.session_state['finanzas'] = st.session_state['finanzas'].drop(indices_originales)
-                
-                # 3. Agregar lo que quedó en el editor (si borraste filas, aquí vendrán menos)
-                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], df_editor])
-                
-                # 4. Ordenar y Guardar
+                # 3. Preparar datos del editor (QUITAR LA COLUMNA PROBLEMÁTICA Fecha_dt)
+                df_to_add = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
+                # 4. Agregar lo que quedó
+                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], df_to_add])
+                # 5. Ordenar y Guardar
                 st.session_state['finanzas'] = st.session_state['finanzas'].sort_index()
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                st.success("✅ Base de datos actualizada y filas borradas correctamente.")
-                time.sleep(1.5); st.rerun()
+                st.success("✅ Base de datos actualizada."); time.sleep(1.5); st.rerun()
 
         else:
             st.info("Sin datos.")
