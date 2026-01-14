@@ -64,7 +64,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.6 | Final Stable")
+    st.caption("MeatOS v4.7 | Delete Fixed")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
@@ -117,7 +117,6 @@ with tab1:
                     st.metric("Stock Disp.", f"{float(data.get('StockActual',0.0)):.3f} Kg")
                 
                 st.write("⚖️ **Peso (g):**")
-                # El key del peso es dinámico para resetearse
                 gr = st.number_input("Gramos", 0, step=10, key=f"peso_{st.session_state['reset_counter']}", label_visibility="collapsed")
                 kg = gr / 1000
                 if kg > 0: st.info(f"Total: **{(precio_final*kg):.2f} Bs** ({kg:.3f} Kg)")
@@ -273,11 +272,12 @@ if st.session_state['admin_mode']:
                         value=(start_month, today),
                         max_value=today,
                         format="DD/MM/YYYY",
-                        key="filtro_fechas_gerencia_final" # KEY UNICO
+                        key="filtro_fechas_gerencia_final" 
                     )
                 with c_filtro2:
                     st.write(""); st.info("Selecciona 'Inicio' y 'Fin'.")
 
+            # Filtrar DataFrame
             if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
                 inicio, fin = rango_fechas
                 mask = (df_f['Fecha_dt'].dt.date >= inicio) & (df_f['Fecha_dt'].dt.date <= fin)
@@ -289,7 +289,7 @@ if st.session_state['admin_mode']:
 
             st.divider()
 
-            # 2. KPIS
+            # 2. KPIS (Se recalculan al borrar)
             ganancia_periodo = df_filtrado['Ganancia'].sum()
             efectivo_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
             banco_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
@@ -308,6 +308,7 @@ if st.session_state['admin_mode']:
             c_table, c_export = st.columns([3, 1])
             with c_table:
                 st.subheader("📒 Detalle de Movimientos")
+                # IMPORTANTE: num_rows="dynamic" permite borrar filas
                 df_editor = st.data_editor(df_filtrado, num_rows="dynamic", use_container_width=True, key="fin_ed_filter_final", column_config={"Fecha_dt": None})
 
             with c_export:
@@ -319,21 +320,33 @@ if st.session_state['admin_mode']:
                 csv_total = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
                 st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
 
+            # --- BOTÓN DE GUARDADO CORREGIDO (LÓGICA DE REEMPLAZO) ---
             if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia_final"):
-                st.session_state['finanzas'].update(df_editor)
+                # 1. Obtener los índices de lo que estábamos viendo (filtro)
+                indices_originales = df_filtrado.index
+                
+                # 2. Borrar esas filas de la base maestra (st.session_state['finanzas'])
+                st.session_state['finanzas'] = st.session_state['finanzas'].drop(indices_originales)
+                
+                # 3. Agregar lo que quedó en el editor (si borraste filas, aquí vendrán menos)
+                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], df_editor])
+                
+                # 4. Ordenar y Guardar
+                st.session_state['finanzas'] = st.session_state['finanzas'].sort_index()
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("Actualizado."); time.sleep(1.5); st.rerun()
+                
+                st.success("✅ Base de datos actualizada y filas borradas correctamente.")
+                time.sleep(1.5); st.rerun()
 
         else:
             st.info("Sin datos.")
 
         st.divider()
 
-        # 4. REGISTRO MANUAL (CON KEYS ÚNICOS PARA EVITAR ERROR)
+        # 4. REGISTRO MANUAL
         with st.container(border=True):
             st.subheader("📝 Registrar Gasto/Ingreso Admin")
             c1, c2 = st.columns(2)
-            # AQUI ESTÁN LOS KEYS ÚNICOS QUE EVITAN EL ERROR
             desc = c1.text_input("Descripción", key="input_desc_admin_final") 
             mont = c2.number_input("Monto", 0.0, key="input_monto_admin_final")
             tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin_final")
