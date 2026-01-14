@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS (CONTRASTE ALTO + MENÚ NATIVO) ---
+# --- ESTILOS CSS ---
 st.markdown("""
 <style>
     /* 1. BOTONES */
@@ -34,7 +34,7 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
-    /* 2. TARJETAS DE DATOS (Forzamos letras negras para Modo Oscuro) */
+    /* 2. TARJETAS DE DATOS (LETRAS NEGRAS) */
     div[data-testid="stMetric"] {
         background-color: #f0f2f6 !important; 
         border: 1px solid #d0d0d0;
@@ -109,7 +109,8 @@ if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = conectar
 sheet = st.session_state['sheet_obj']
 
 if sheet:
-    if 'finanzas' not in st.session_state: st.session_state['finanzas'] = cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago'])
+    # AÑADIMOS 'Ganancia' A LA TABLA DE FINANZAS
+    if 'finanzas' not in st.session_state: st.session_state['finanzas'] = cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago', 'Ganancia'])
     if 'productos' not in st.session_state: st.session_state['productos'] = cargar_data(sheet, "productos", ['Producto', 'Costo', 'PrecioVenta', 'Categoria', 'StockActual'])
     if 'detalles' not in st.session_state: st.session_state['detalles'] = cargar_data(sheet, "detalles", ['Fecha', 'Producto', 'Categoria', 'PesoKg', 'CostoUnit', 'PrecioVentaUnit', 'Subtotal', 'Ganancia'])
 else:
@@ -154,7 +155,7 @@ with st.sidebar:
         st.session_state['admin_mode'] = False
     
     st.markdown("---")
-    st.caption("MeatOS v3.7 | Full Admin")
+    st.caption("MeatOS v3.8 | Precision")
 
 # --- APP ---
 tab1, tab2, tab3 = None, None, None
@@ -182,11 +183,11 @@ with tab1:
                 tipo_bd = "Egreso" if "Salida" in tipo_caja else "Ingreso"
                 nuevo = pd.DataFrame([{
                     'Fecha': datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    'Detalle': f"[CAJA] {detalle_caja}", 'Tipo': tipo_bd, 'Monto': monto_caja * signo, 'MetodoPago': 'Efectivo'
+                    'Detalle': f"[CAJA] {detalle_caja}", 'Tipo': tipo_bd, 'Monto': monto_caja * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0
                 }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                st.success("✅ Registrado")
+                st.success("✅ Movimiento Registrado")
                 time.sleep(1)
                 st.rerun()
 
@@ -247,9 +248,14 @@ with tab1:
         st.subheader("🛒 Carrito")
         if st.session_state['carrito']:
             df_c = pd.DataFrame(st.session_state['carrito'])
-            st.dataframe(df_c, use_container_width=True, hide_index=True)
+            
+            # --- MODIFICACIÓN 1: OCULTAR COSTO AL VENDEDOR ---
+            # Solo mostramos columnas relevantes para el vendedor
+            columnas_visibles = ["Producto", "Cantidad", "PrecioUnit", "Subtotal"]
+            st.dataframe(df_c[columnas_visibles], use_container_width=True, hide_index=True)
             
             total = df_c['Subtotal'].sum()
+            total_ganancia_venta = sum([(row['PrecioUnit'] - row['CostoUnit']) * row['Cantidad'] for row in st.session_state['carrito']])
             
             st.markdown(f"""
             <div style="background-color: white; padding: 15px; border-radius: 10px; text-align: right; border: 2px solid #8B0000; margin-bottom: 20px;">
@@ -271,14 +277,19 @@ with tab1:
             puede_cobrar = True
             
             if metodo == "💵 Efectivo":
-                pago_cliente = st.number_input("Monto Recibido:", min_value=0.0, value=float(total))
+                # --- MODIFICACIÓN 2: EFECTIVO OBLIGATORIO DESDE 0 ---
+                pago_cliente = st.number_input("Monto Recibido:", min_value=0.0, value=0.0, step=0.5, help="Ingrese cuánto dinero entrega el cliente")
+                
                 if pago_cliente >= total:
                     cambio = pago_cliente - total
                     st.info(f"💰 Vuelto: **{cambio:.2f} Bs**")
                     if cambio > 0:
                         cambio_por_qr = st.checkbox(f"🔄 Vuelto por QR")
                 else:
-                    st.error(f"Falta: {total - pago_cliente:.2f} Bs")
+                    if pago_cliente > 0: # Solo muestra error si ya intentó escribir
+                        st.error(f"Falta: {total - pago_cliente:.2f} Bs")
+                    else:
+                        st.warning("Ingrese el monto recibido.")
                     puede_cobrar = False
             
             col_b1, col_b2 = st.columns([1, 2])
@@ -308,19 +319,24 @@ with tab1:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(nuevos_detalles)], ignore_index=True)
                     guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
+                # --- MODIFICACIÓN 4: GUARDAR GANANCIA EN FINANZAS ---
                 detalle_txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
-                nuevo_ingreso = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': f"Venta: {detalle_txt}", 'Tipo': "Ingreso", 'Monto': total, 'MetodoPago': metodo}])
+                nuevo_ingreso = pd.DataFrame([{
+                    'Fecha': fecha_ahora, 'Detalle': f"Venta: {detalle_txt}", 'Tipo': "Ingreso", 
+                    'Monto': total, 'MetodoPago': metodo, 'Ganancia': total_ganancia_venta
+                }])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo_ingreso], ignore_index=True)
                 
                 if metodo == "💵 Efectivo" and cambio_por_qr and cambio > 0:
-                    swap_in = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Exc. Billete (Swap QR)", 'Tipo': "Ingreso", 'Monto': cambio, 'MetodoPago': "Efectivo"}])
-                    swap_out = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Devolución Cambio", 'Tipo': "Egreso", 'Monto': -cambio, 'MetodoPago': "QR"}])
+                    swap_in = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Exc. Billete (Swap QR)", 'Tipo': "Ingreso", 'Monto': cambio, 'MetodoPago': "Efectivo", 'Ganancia': 0}])
+                    swap_out = pd.DataFrame([{'Fecha': fecha_ahora, 'Detalle': "Devolución Cambio", 'Tipo': "Egreso", 'Monto': -cambio, 'MetodoPago': "QR", 'Ganancia': 0}])
                     st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], swap_in, swap_out], ignore_index=True)
 
                 guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 
-                lineas = "%0A".join([f"▪️ {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
-                msg = f"*🥩 EL CORTE BENIANO*%0A📅 {fecha_ahora}%0A📋 *Su Compra:*%0A{lineas}%0A----------------%0A💰 *TOTAL: {total:.2f} Bs*%0A✅ {metodo}"
+                # --- MODIFICACIÓN 3: TICKET SIN EMOJIS COMPLEJOS ---
+                lineas = "%0A".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
+                msg = f"*** EL CORTE BENIANO ***%0AFecha: {fecha_ahora}%0A-- SU COMPRA --%0A{lineas}%0A----------------%0ATOTAL: {total:.2f} Bs%0APago: {metodo}"
                 
                 link = f"https://wa.me/591{celular_cliente.strip()}?text={msg}" if celular_cliente else f"https://wa.me/?text={msg}"
                 st.session_state['ultimo_ticket'] = {'link': link, 'texto': "📲 ENVIAR TICKET WHATSAPP"}
@@ -341,7 +357,7 @@ with tab1:
 
     # Arqueo
     st.divider()
-    st.subheader("📊 Arqueo de Caja")
+    st.subheader("📊 Arqueo de Caja (Turno Actual)")
     hoy = datetime.now().strftime("%Y-%m-%d")
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     
@@ -382,7 +398,6 @@ if st.session_state['admin_mode']:
 
         st.divider()
         st.subheader("📋 Tabla de Productos (Editable)")
-        # num_rows="dynamic" PERMITE BORRAR FILAS
         df_edit = st.data_editor(st.session_state['productos'], num_rows="dynamic", use_container_width=True, key="inv_editor")
         if st.button("💾 Guardar Cambios Inventario"):
             st.session_state['productos'] = df_edit
@@ -394,7 +409,36 @@ if st.session_state['admin_mode']:
     with tab3:
         st.header("📊 Finanzas & Gerencia")
         
-        # 1. Registrar Gastos Admin
+        # --- MODIFICACIÓN 5: CÁLCULOS PRECISOS Y TOTALES ---
+        st.subheader("🏦 Estado Financiero (Histórico Total)")
+        
+        df_fin = st.session_state['finanzas']
+        if not df_fin.empty:
+            # Cálculos considerando ingresos y egresos
+            total_ingreso = df_fin[df_fin['Tipo'] == 'Ingreso']['Monto'].sum()
+            total_egreso = df_fin[df_fin['Tipo'] == 'Egreso']['Monto'].sum()
+            saldo_total = total_ingreso + total_egreso # Egreso ya es negativo en la BD? No, se guarda positivo en Monto pero se multiplica por signo antes. 
+            # Corrección: En el código de caja, guardamos 'Monto' * signo. Así que Monto ya tiene el signo.
+            saldo_total = df_fin['Monto'].sum()
+
+            # Efectivo
+            df_efectivo = df_fin[df_fin['MetodoPago'].astype(str).str.contains('Efectivo', case=False, na=False)]
+            saldo_efectivo = df_efectivo['Monto'].sum()
+
+            # QR/Banco
+            df_qr = df_fin[df_fin['MetodoPago'].astype(str).str.contains('QR', case=False, na=False) | df_fin['MetodoPago'].astype(str).str.contains('Banco', case=False, na=False)]
+            saldo_qr = df_qr['Monto'].sum()
+
+            k1, k2, k3 = st.columns(3)
+            k1.metric("SALDO TOTAL", f"{saldo_total:.2f} Bs")
+            k2.metric("EN EFECTIVO", f"{saldo_efectivo:.2f} Bs")
+            k3.metric("EN BANCO/QR", f"{saldo_qr:.2f} Bs")
+        else:
+            st.info("Sin datos financieros.")
+
+        st.divider()
+        
+        # Registro Admin
         with st.container(border=True):
             st.subheader("📝 Registrar Movimiento Administrativo")
             col_ga1, col_ga2 = st.columns(2)
@@ -408,7 +452,7 @@ if st.session_state['admin_mode']:
                     tipo_bd = "Egreso" if "Egreso" in tipo_adm else "Ingreso"
                     nuevo_adm = pd.DataFrame([{
                         'Fecha': datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        'Detalle': f"[ADMIN] {desc_adm}", 'Tipo': tipo_bd, 'Monto': monto_adm * signo, 'MetodoPago': 'Transferencia/Otro'
+                        'Detalle': f"[ADMIN] {desc_adm}", 'Tipo': tipo_bd, 'Monto': monto_adm * signo, 'MetodoPago': 'Transferencia/Otro', 'Ganancia': 0
                     }])
                     st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo_adm], ignore_index=True)
                     guardar_data(sheet, "finanzas", st.session_state['finanzas'])
@@ -418,7 +462,7 @@ if st.session_state['admin_mode']:
 
         st.divider()
         st.subheader("📒 Libro Contable (Editable)")
-        st.caption("Selecciona filas y presiona 'Supr' para borrar. Luego dale a Guardar.")
+        st.caption("Si borras una venta aquí, el saldo de arriba se recalcula automáticamente.")
         
         # Tabla Editable para Finanzas
         df_fin_edit = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_editor")
