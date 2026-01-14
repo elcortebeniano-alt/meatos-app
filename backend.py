@@ -54,37 +54,38 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- NUEVA FUNCIÓN: GENERADOR DE TICKET HTML ---
+# --- EN backend.py ---
+
 def generar_html_ticket(carrito, total, fecha, metodo):
-    """Crea un archivo HTML listo para imprimir en 58mm"""
+    """Genera HTML puro para renderizar directo en la app"""
     
     items_html = ""
     for item in carrito:
         items_html += f"""
         <tr>
-            <td style="padding-top: 5px; font-weight: bold;">{item['Producto']}</td>
+            <td style="padding-top: 5px; font-weight: bold; font-size: 12px;">{item['Producto']}</td>
         </tr>
         <tr>
-            <td style="padding-bottom: 5px; border-bottom: 1px dashed #ccc;">
+            <td style="padding-bottom: 5px; border-bottom: 1px dashed #ccc; font-size: 12px;">
                 {item['Cantidad']:.3f} kg x {item['PrecioUnit']:.2f} = <span style="float:right;">{item['Subtotal']:.2f}</span>
             </td>
         </tr>
         """
 
+    # HTML COMPLETO CON BOTÓN DE IMPRIMIR INTEGRADO
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <meta charset="UTF-8">
-        <title>Ticket El Corte Beniano</title>
         <style>
             body {{
                 font-family: 'Courier New', monospace;
-                width: 58mm; /* ANCHO DE IMPRESORA TÉRMICA */
+                width: 100%;
+                max-width: 300px; /* Ancho típico de ticket */
                 margin: 0 auto;
                 background-color: #fff;
-                padding: 5px;
-                font-size: 12px;
+                padding: 10px;
+                color: #000;
             }}
             .header {{ text-align: center; }}
             .title {{ font-size: 16px; font-weight: bold; margin: 0; }}
@@ -94,21 +95,35 @@ def generar_html_ticket(carrito, total, fecha, metodo):
             .total {{ font-size: 18px; font-weight: bold; text-align: right; margin-top: 10px; }}
             .footer {{ text-align: center; margin-top: 20px; font-size: 10px; }}
             
-            /* OCULTAR ELEMENTOS AL IMPRIMIR QUE NO SEAN EL TICKET */
+            /* Botón de imprimir solo visible en pantalla, no en papel */
+            .no-print {{
+                text-align: center;
+                margin-bottom: 15px;
+            }}
+            button {{
+                background-color: #000; color: #fff; border: none; 
+                padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer;
+            }}
+            
             @media print {{
+                .no-print {{ display: none; }}
                 @page {{ margin: 0; }}
-                body {{ margin: 0; }}
+                body {{ margin: 0; padding: 0; }}
             }}
         </style>
     </head>
     <body>
+        <div class="no-print">
+            <button onclick="window.print()">🖨️ IMPRIMIR / PDF</button>
+        </div>
+
         <div class="header">
             <p class="title">EL CORTE BENIANO</p>
             <p class="subtitle">Carne de Primera</p>
         </div>
         
         <div class="divider"></div>
-        <p style="margin: 5px 0;">Fecha: {fecha}<br>Pago: {metodo}</p>
+        <p style="margin: 5px 0; font-size: 12px;">Fecha: {fecha}<br>Pago: {metodo}</p>
         <div class="divider"></div>
 
         <table>
@@ -125,11 +140,12 @@ def generar_html_ticket(carrito, total, fecha, metodo):
         </div>
 
         <script>
-            window.onload = function() {{ window.print(); }}
+            setTimeout(function() {{ window.print(); }}, 500);
         </script>
     </body>
     </html>
     """
+    return html_content # Devolvemos TEXTO puro, ya no Base64
     
     # Convertir a Base64 para abrirlo como link
     b64 = base64.b64encode(html_content.encode()).decode()
