@@ -182,13 +182,22 @@ with tab1:
     # --- MOSTRAR BOTONES DE TICKET SI EXISTEN ---
     if st.session_state['ultimo_ticket']:
         st.success("✅ Venta Exitosa")
-        col_t1, col_t2 = st.columns(2)
-        col_t1.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
-        html_btn = f"""
-        <a href="{st.session_state['ultimo_ticket']['link_html']}" target="_blank" 
-           style="display: inline-flex; align-items: center; justify-content: center; background-color: #333; color: white; font-weight: bold; padding: 0.8rem 1.5rem; border-radius: 12px; text-decoration: none; width: 100%; font-size: 1.1rem; margin-top: 10px;">
-           🖨️ VER TICKET
-        </a>
+        
+        c_t1, c_t2 = st.columns([1, 1])
+        
+        with c_t1:
+            # Botón WhatsApp
+            st.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
+            
+            if st.button("❌ CERRAR / NUEVA VENTA"): 
+                st.session_state['ultimo_ticket'] = None
+                st.rerun()
+
+        with c_t2:
+            st.caption("Vista Previa del Ticket:")
+            # AQUÍ ESTÁ LA MAGIA: Renderizamos el ticket dentro de la app
+            # Esto ejecutará el window.print() automáticamente
+            components.html(st.session_state['ultimo_ticket']['html_raw'], height=400, scrolling=True)
         """
         col_t2.markdown(html_btn, unsafe_allow_html=True)
         if st.button("Cerrar Ticket"): st.session_state['ultimo_ticket'] = None; st.rerun()
@@ -257,4 +266,5 @@ if st.session_state['admin_mode']:
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
 
