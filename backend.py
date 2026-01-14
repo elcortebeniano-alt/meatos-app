@@ -3,7 +3,6 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
-import base64
 
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -54,8 +53,7 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- EN backend.py ---
-
+# --- GENERADOR DE TICKET HTML (VERSION IFRAME) ---
 def generar_html_ticket(carrito, total, fecha, metodo):
     """Genera HTML puro para renderizar directo en la app"""
     
@@ -72,7 +70,6 @@ def generar_html_ticket(carrito, total, fecha, metodo):
         </tr>
         """
 
-    # HTML COMPLETO CON BOTÓN DE IMPRIMIR INTEGRADO
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -81,7 +78,6 @@ def generar_html_ticket(carrito, total, fecha, metodo):
             body {{
                 font-family: 'Courier New', monospace;
                 width: 100%;
-                max-width: 300px; /* Ancho típico de ticket */
                 margin: 0 auto;
                 background-color: #fff;
                 padding: 10px;
@@ -95,15 +91,8 @@ def generar_html_ticket(carrito, total, fecha, metodo):
             .total {{ font-size: 18px; font-weight: bold; text-align: right; margin-top: 10px; }}
             .footer {{ text-align: center; margin-top: 20px; font-size: 10px; }}
             
-            /* Botón de imprimir solo visible en pantalla, no en papel */
-            .no-print {{
-                text-align: center;
-                margin-bottom: 15px;
-            }}
-            button {{
-                background-color: #000; color: #fff; border: none; 
-                padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer;
-            }}
+            .no-print {{ text-align: center; margin-bottom: 15px; }}
+            button {{ background-color: #000; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }}
             
             @media print {{
                 .no-print {{ display: none; }}
@@ -114,40 +103,27 @@ def generar_html_ticket(carrito, total, fecha, metodo):
     </head>
     <body>
         <div class="no-print">
-            <button onclick="window.print()">🖨️ IMPRIMIR / PDF</button>
+            <button onclick="window.print()">🖨️ IMPRIMIR TICKET</button>
         </div>
 
         <div class="header">
             <p class="title">EL CORTE BENIANO</p>
             <p class="subtitle">Carne de Primera</p>
         </div>
-        
         <div class="divider"></div>
         <p style="margin: 5px 0; font-size: 12px;">Fecha: {fecha}<br>Pago: {metodo}</p>
         <div class="divider"></div>
-
-        <table>
-            {items_html}
-        </table>
-
+        <table>{items_html}</table>
         <div class="divider"></div>
         <div class="total">TOTAL: {total:.2f} Bs</div>
         <div class="divider"></div>
-
-        <div class="footer">
-            <p>¡Gracias por su preferencia!</p>
-            <p>***</p>
-        </div>
+        <div class="footer"><p>¡Gracias por su preferencia!</p><p>***</p></div>
 
         <script>
-            setTimeout(function() {{ window.print(); }}, 500);
+            // Intentar imprimir automáticamente al cargar
+            setTimeout(function() {{ window.print(); }}, 800);
         </script>
     </body>
     </html>
     """
-    return html_content # Devolvemos TEXTO puro, ya no Base64
-    
-    # Convertir a Base64 para abrirlo como link
-    b64 = base64.b64encode(html_content.encode()).decode()
-    href = f'data:text/html;base64,{b64}'
-    return href
+    return html_content
