@@ -235,13 +235,14 @@ if st.session_state['admin_mode']:
         if st.button("💾 Guardar Cambios"):
             st.session_state['productos'] = df_ed; backend.guardar_data(sheet, "productos", df_ed); st.success("Listo"); time.sleep(1); st.rerun()
 
+# === PESTAÑA 3: GERENCIA (REPORTES AVANZADOS) ===
     with tab3:
         st.header("📊 Gerencia & Reportes")
         
         df_f = st.session_state['finanzas']
         
         if not df_f.empty and 'Ganancia' in df_f.columns:
-            # Preparar datos para filtrar
+            # Preparar datos
             df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
             df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
             
@@ -250,52 +251,45 @@ if st.session_state['admin_mode']:
                 c_filtro1, c_filtro2 = st.columns([2, 1])
                 with c_filtro1:
                     st.subheader("📅 Filtrar Reporte")
-                    # Por defecto: Mes Actual
                     today = datetime.utcnow() - timedelta(hours=4)
                     start_month = today.replace(day=1)
                     
-                    # Selector de Rango
                     rango_fechas = st.date_input(
                         "Selecciona Rango de Fechas:",
                         value=(start_month, today),
                         max_value=today,
-                        format="DD/MM/YYYY"
+                        format="DD/MM/YYYY",
+                        key="filtro_fechas_gerencia" # <--- KEY ÚNICO
                     )
                 
                 with c_filtro2:
-                    st.write("") # Espacio
-                    st.info("Selecciona 'Inicio' y 'Fin' en el calendario para ver un periodo específico.")
+                    st.write("")
+                    st.info("Selecciona 'Inicio' y 'Fin' para filtrar.")
 
             # LÓGICA DE FILTRADO
             if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
                 inicio, fin = rango_fechas
-                # Filtramos el DataFrame
                 mask = (df_f['Fecha_dt'].dt.date >= inicio) & (df_f['Fecha_dt'].dt.date <= fin)
                 df_filtrado = df_f.loc[mask]
-                st.success(f"Mostrando movimientos desde **{inicio.strftime('%d/%m/%Y')}** hasta **{fin.strftime('%d/%m/%Y')}**")
+                st.success(f"Mostrando: **{inicio.strftime('%d/%m/%Y')}** al **{fin.strftime('%d/%m/%Y')}**")
             else:
-                # Si solo selecciona un día o hay error, mostramos ese día o todo el mes
                 df_filtrado = df_f
-                st.warning("Selecciona una fecha de inicio y fin.")
+                st.warning("Selecciona fecha inicio y fin.")
 
             st.divider()
 
             # --- 2. TARJETAS DE RESULTADOS (KPIs) ---
-            # Calculamos los números BASADOS EN EL FILTRO
             ganancia_periodo = df_filtrado['Ganancia'].sum()
-            
-            # Tesorería del periodo (Ingresos - Egresos de ese rango)
             efectivo_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
             banco_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
             total_periodo = df_filtrado['Monto'].sum()
 
-            st.subheader("📈 Resultados del Periodo Seleccionado")
-            
+            st.subheader("📈 Resultados del Periodo")
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("💰 GANANCIA NETA", f"{ganancia_periodo:.2f} Bs", help="Utilidad real en este rango de fechas")
-            k2.metric("💵 FLUJO EFECTIVO", f"{efectivo_periodo:.2f} Bs", help="Dinero que entró/salió en efectivo")
-            k3.metric("📱 FLUJO BANCO", f"{banco_periodo:.2f} Bs", help="Dinero que entró/salió por QR")
-            k4.metric("∑ TOTAL MOVIDO", f"{total_periodo:.2f} Bs", border=True)
+            k1.metric("💰 GANANCIA", f"{ganancia_periodo:.2f} Bs")
+            k2.metric("💵 EFECTIVO", f"{efectivo_periodo:.2f} Bs")
+            k3.metric("📱 BANCO/QR", f"{banco_periodo:.2f} Bs")
+            k4.metric("∑ TOTAL", f"{total_periodo:.2f} Bs", border=True)
             
             st.divider()
 
@@ -304,46 +298,43 @@ if st.session_state['admin_mode']:
             
             with c_table:
                 st.subheader("📒 Detalle de Movimientos")
-                # Tabla editable (Solo lectura recomendada en modo filtro, pero editable si se necesita)
                 df_editor = st.data_editor(
                     df_filtrado, 
                     num_rows="dynamic", 
                     use_container_width=True, 
-                    key="fin_ed_filter",
-                    column_config={
-                        "Fecha_dt": None, # Ocultamos la columna auxiliar
-                    }
+                    key="fin_ed_filter", # <--- KEY ÚNICO
+                    column_config={"Fecha_dt": None}
                 )
 
             with c_export:
                 st.subheader("📂 Descargas")
-                st.write("Exportar datos visibles:")
+                st.write("Exportar selección:")
                 
                 # BOTÓN 1: DESCARGAR FILTRADO
                 csv_filtrado = df_editor.to_csv(index=False, sep=';').encode('utf-8-sig')
                 st.download_button(
-                    label="📥 Descargar Reporte (Filtrado)",
+                    label="📥 Descargar Reporte",
                     data=csv_filtrado,
-                    file_name=f"Reporte_{inicio.strftime('%d%m')}_al_{fin.strftime('%d%m')}.csv" if isinstance(rango_fechas, tuple) else "Reporte.csv",
+                    file_name="Reporte_Filtrado.csv",
                     mime='text/csv',
-                    type="primary"
+                    type="primary",
+                    key="btn_descarga_filtrado" # <--- KEY ÚNICO
                 )
                 
                 st.divider()
                 st.caption("Seguridad:")
-                # BOTÓN 2: BACKUP TOTAL (Por si acaso)
+                # BOTÓN 2: BACKUP TOTAL
                 csv_total = df_f.to_csv(index=False, sep=';').encode('utf-8-sig')
                 st.download_button(
-                    label="📦 Backup Histórico Completo",
+                    label="📦 Backup Total",
                     data=csv_total,
-                    file_name=f"BACKUP_TOTAL_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime='text/csv'
+                    file_name=f"BACKUP_TOTAL_{today.strftime('%Y%m%d')}.csv",
+                    mime='text/csv',
+                    key="btn_descarga_total" # <--- KEY ÚNICO
                 )
 
-            # GUARDAR CAMBIOS (Solo si se editó la tabla filtrada)
-            if st.button("💾 Guardar Cambios en la Tabla"):
-                # Actualizar el DataFrame Maestro con los cambios del Filtrado
-                # (Usamos índices para actualizar solo las filas correspondientes)
+            # GUARDAR CAMBIOS
+            if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia"): # <--- KEY ÚNICO
                 st.session_state['finanzas'].update(df_editor)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Base de datos actualizada.")
@@ -353,6 +344,24 @@ if st.session_state['admin_mode']:
             st.info("No hay datos financieros para mostrar.")
 
         st.divider()
+
+        # --- REGISTRO MANUAL ADMIN ---
+        with st.container(border=True):
+            st.subheader("📝 Registrar Gasto/Ingreso Admin")
+            c1, c2 = st.columns(2)
+            
+            # AQUÍ ESTABA EL ERROR: AGREGAMOS KEYS ÚNICOS
+            desc = c1.text_input("Descripción", key="input_desc_admin") 
+            mont = c2.number_input("Monto", 0.0, key="input_monto_admin")
+            
+            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin")
+            
+            if st.button("Registrar Movimiento", key="btn_reg_admin") and mont > 0:
+                s = -1 if tipo == "Egreso" else 1
+                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
+                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
+                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
+                st.success("Registrado"); time.sleep(1); st.rerun()
 
         # --- REGISTRO MANUAL ADMIN (Siempre útil) ---
         with st.container(border=True):
@@ -401,6 +410,7 @@ if st.session_state['admin_mode']:
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
 
 
 
