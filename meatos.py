@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+import os  # <--- ¡ESTA ERA LA LÍNEA QUE FALTABA!
 from datetime import datetime
 
 # --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
@@ -46,7 +47,7 @@ with st.sidebar:
             if st.button("🔄 Refrescar"): st.cache_resource.clear(); st.rerun()
         else: st.session_state['admin_mode'] = False
     else: st.session_state['admin_mode'] = False
-    st.caption("MeatOS v4.0 | Modular")
+    st.caption("MeatOS v4.0.1 | Hotfix")
 
 # --- NAVEGACIÓN ---
 tab1, tab2, tab3 = None, None, None
