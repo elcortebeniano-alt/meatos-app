@@ -259,7 +259,7 @@ if st.session_state['admin_mode']:
                         value=(start_month, today),
                         max_value=today,
                         format="DD/MM/YYYY",
-                        key="filtro_fechas_gerencia" # <--- KEY ÚNICO
+                        key="filtro_fechas_gerencia_v2" # <--- KEY ÚNICO
                     )
                 
                 with c_filtro2:
@@ -302,7 +302,7 @@ if st.session_state['admin_mode']:
                     df_filtrado, 
                     num_rows="dynamic", 
                     use_container_width=True, 
-                    key="fin_ed_filter", # <--- KEY ÚNICO
+                    key="fin_ed_filter_v2", # <--- KEY ÚNICO
                     column_config={"Fecha_dt": None}
                 )
 
@@ -318,7 +318,7 @@ if st.session_state['admin_mode']:
                     file_name="Reporte_Filtrado.csv",
                     mime='text/csv',
                     type="primary",
-                    key="btn_descarga_filtrado" # <--- KEY ÚNICO
+                    key="btn_descarga_filtrado_v2" # <--- KEY ÚNICO
                 )
                 
                 st.divider()
@@ -330,11 +330,11 @@ if st.session_state['admin_mode']:
                     data=csv_total,
                     file_name=f"BACKUP_TOTAL_{today.strftime('%Y%m%d')}.csv",
                     mime='text/csv',
-                    key="btn_descarga_total" # <--- KEY ÚNICO
+                    key="btn_descarga_total_v2" # <--- KEY ÚNICO
                 )
 
             # GUARDAR CAMBIOS
-            if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia"): # <--- KEY ÚNICO
+            if st.button("💾 Guardar Cambios Tabla", key="btn_save_gerencia_v2"): # <--- KEY ÚNICO
                 st.session_state['finanzas'].update(df_editor)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Base de datos actualizada.")
@@ -344,6 +344,25 @@ if st.session_state['admin_mode']:
             st.info("No hay datos financieros para mostrar.")
 
         st.divider()
+
+        # --- REGISTRO MANUAL ADMIN ---
+        with st.container(border=True):
+            st.subheader("📝 Registrar Gasto/Ingreso Admin")
+            c1, c2 = st.columns(2)
+            
+            # --- AQUÍ ESTABA EL PROBLEMA ---
+            # Le agregamos key="..._admin" para diferenciarlo del "Monto" de la Caja Chica
+            desc = c1.text_input("Descripción", key="desc_input_admin") 
+            mont = c2.number_input("Monto", 0.0, key="monto_input_admin")
+            
+            tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="tipo_radio_admin")
+            
+            if st.button("Registrar Movimiento", key="btn_reg_admin") and mont > 0:
+                s = -1 if tipo == "Egreso" else 1
+                n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0}])
+                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
+                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
+                st.success("Registrado"); time.sleep(1); st.rerun()
 
         # --- REGISTRO MANUAL ADMIN ---
         with st.container(border=True):
@@ -410,6 +429,7 @@ if st.session_state['admin_mode']:
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
 
 
 
