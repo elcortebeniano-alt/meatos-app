@@ -240,7 +240,7 @@ if st.session_state['admin_mode']:
         df_f = st.session_state['finanzas']
         if not df_f.empty and 'Ganancia' in df_f.columns:
             
-            # --- FILA 1: RENTABILIDAD (GANANCIAS) ---
+            # --- FILA 1: RENTABILIDAD ---
             st.subheader("📈 Rentabilidad")
             df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
             df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
@@ -255,20 +255,38 @@ if st.session_state['admin_mode']:
             
             st.markdown("---")
 
-            # --- FILA 2: TESORERÍA (SALDOS REALES) ---
-            st.subheader("🏦 Tesorería (Saldos Acumulados)")
-            
-            # Calculamos los saldos sumando los montos (que ya incluyen egresos como negativos)
+            # --- FILA 2: TESORERÍA ---
+            st.subheader("🏦 Tesorería (Saldos Reales)")
             total_efectivo = df_f[df_f['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
             total_banco = df_f[df_f['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
             total_global = df_f['Monto'].sum()
 
             m1, m2, m3 = st.columns(3)
-            m1.metric("💵 EN CAJA (Efectivo)", f"{total_efectivo:.2f} Bs")
-            m2.metric("📱 EN BANCO (QR)", f"{total_banco:.2f} Bs")
-            m3.metric("💰 TOTAL ACUMULADO", f"{total_global:.2f} Bs")
+            m1.metric("💵 EN CAJA", f"{total_efectivo:.2f} Bs")
+            m2.metric("📱 EN BANCO", f"{total_banco:.2f} Bs")
+            m3.metric("💰 TOTAL", f"{total_global:.2f} Bs")
         
         st.divider()
+        
+        # --- NUEVO: BOTÓN PARA EL BANCO ---
+        st.subheader("📂 Exportar para Banco / Contador")
+        col_down1, col_down2 = st.columns([2,1])
+        with col_down1:
+            st.caption("Descarga el historial completo de movimientos (Libro Diario) en formato Excel compatible (CSV).")
+        with col_down2:
+            # Convertimos el DataFrame a CSV para descargar
+            csv = df_f.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Descargar Historial Completo",
+                data=csv,
+                file_name=f"MeatOS_LibroDiario_{datetime.now().strftime('%Y-%m-%d')}.csv",
+                mime='text/csv',
+                type="primary"
+            )
+
+        st.divider()
+        
+        # Movimiento Admin
         with st.container(border=True):
             st.subheader("📝 Movimiento Admin")
             c1, c2 = st.columns(2); desc = c1.text_input("Desc"); mont = c2.number_input("Monto", 0.0)
@@ -279,7 +297,9 @@ if st.session_state['admin_mode']:
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Listo"); time.sleep(1); st.rerun()
+        
         st.divider()
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
