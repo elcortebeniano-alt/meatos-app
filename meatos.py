@@ -1,3 +1,4 @@
+import streamlit.components.v1 as components
 import streamlit as st
 import pandas as pd
 import time
@@ -256,3 +257,4 @@ if st.session_state['admin_mode']:
         df_fin_ed = st.data_editor(st.session_state['finanzas'], num_rows="dynamic", use_container_width=True, key="fin_ed")
         if st.button("💾 Guardar Finanzas"):
             st.session_state['finanzas'] = df_fin_ed; backend.guardar_data(sheet, "finanzas", df_fin_ed); st.success("Listo"); time.sleep(1); st.rerun()
+
