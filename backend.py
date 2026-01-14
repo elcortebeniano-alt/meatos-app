@@ -53,19 +53,22 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- GENERADOR DE TICKET HTML (VERSION IFRAME) ---
+# --- GENERADOR DE TICKET HTML (CALIBRADO PARA 58mm/57mm) ---
 def generar_html_ticket(carrito, total, fecha, metodo):
-    """Genera HTML puro para renderizar directo en la app"""
+    """Genera HTML ajustado para evitar cortes en los márgenes"""
     
     items_html = ""
     for item in carrito:
         items_html += f"""
         <tr>
-            <td style="padding-top: 5px; font-weight: bold; font-size: 12px;">{item['Producto']}</td>
+            <td colspan="2" style="padding-top: 3px; font-weight: bold; font-size: 11px;">{item['Producto']}</td>
         </tr>
         <tr>
-            <td style="padding-bottom: 5px; border-bottom: 1px dashed #ccc; font-size: 12px;">
-                {item['Cantidad']:.3f} kg x {item['PrecioUnit']:.2f} = <span style="float:right;">{item['Subtotal']:.2f}</span>
+            <td style="padding-bottom: 3px; border-bottom: 1px dashed #000; font-size: 11px;">
+                {item['Cantidad']:.3f} x {item['PrecioUnit']:.2f}
+            </td>
+            <td style="padding-bottom: 3px; border-bottom: 1px dashed #000; font-size: 11px; text-align: right;">
+                {item['Subtotal']:.2f}
             </td>
         </tr>
         """
@@ -77,50 +80,58 @@ def generar_html_ticket(carrito, total, fecha, metodo):
         <style>
             body {{
                 font-family: 'Courier New', monospace;
-                width: 100%;
-                margin: 0 auto;
+                /* AJUSTE CLAVE: Usamos 48mm para asegurar que entre en el papel de 57mm */
+                width: 48mm; 
+                margin: 0;
                 background-color: #fff;
-                padding: 10px;
+                padding: 0;
                 color: #000;
             }}
+            .container {{
+                padding: 2px; /* Margen mínimo de seguridad */
+            }}
             .header {{ text-align: center; }}
-            .title {{ font-size: 16px; font-weight: bold; margin: 0; }}
-            .subtitle {{ font-size: 12px; margin: 0; }}
+            .title {{ font-size: 14px; font-weight: bold; margin: 0; }}
+            .subtitle {{ font-size: 11px; margin: 0; }}
             .divider {{ border-top: 1px dashed black; margin: 5px 0; }}
             table {{ width: 100%; border-collapse: collapse; }}
-            .total {{ font-size: 18px; font-weight: bold; text-align: right; margin-top: 10px; }}
-            .footer {{ text-align: center; margin-top: 20px; font-size: 10px; }}
+            .total {{ font-size: 16px; font-weight: bold; text-align: right; margin-top: 5px; }}
+            .footer {{ text-align: center; margin-top: 10px; font-size: 10px; }}
             
-            .no-print {{ text-align: center; margin-bottom: 15px; }}
-            button {{ background-color: #000; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }}
+            .no-print {{ text-align: center; margin-bottom: 10px; padding-top: 10px; }}
+            button {{ background-color: #000; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }}
             
             @media print {{
                 .no-print {{ display: none; }}
-                @page {{ margin: 0; }}
-                body {{ margin: 0; padding: 0; }}
+                @page {{ margin: 0; size: auto; }}
+                body {{ margin: 0; }}
             }}
         </style>
     </head>
     <body>
         <div class="no-print">
-            <button onclick="window.print()">🖨️ IMPRIMIR TICKET</button>
+            <button onclick="window.print()">🖨️ IMPRIMIR</button>
         </div>
 
-        <div class="header">
-            <p class="title">EL CORTE BENIANO</p>
-            <p class="subtitle">Carne de Primera</p>
+        <div class="container">
+            <div class="header">
+                <p class="title">EL CORTE BENIANO</p>
+                <p class="subtitle">Carne de Primera</p>
+            </div>
+            <div class="divider"></div>
+            <p style="margin: 2px 0; font-size: 11px;">Fecha: {fecha}<br>Pago: {metodo}</p>
+            <div class="divider"></div>
+            
+            <table>{items_html}</table>
+            
+            <div class="divider"></div>
+            <div class="total">TOTAL: {total:.2f} Bs</div>
+            <div class="divider"></div>
+            
+            <div class="footer"><p>¡Gracias por su compra!</p></div>
         </div>
-        <div class="divider"></div>
-        <p style="margin: 5px 0; font-size: 12px;">Fecha: {fecha}<br>Pago: {metodo}</p>
-        <div class="divider"></div>
-        <table>{items_html}</table>
-        <div class="divider"></div>
-        <div class="total">TOTAL: {total:.2f} Bs</div>
-        <div class="divider"></div>
-        <div class="footer"><p>¡Gracias por su preferencia!</p><p>***</p></div>
 
         <script>
-            // Intentar imprimir automáticamente al cargar
             setTimeout(function() {{ window.print(); }}, 800);
         </script>
     </body>
