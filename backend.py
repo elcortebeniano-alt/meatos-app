@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
+import base64 # <--- NECESARIO PARA EL LOGO
 
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -53,113 +54,94 @@ def limpiar_fechas(df):
     if 'Fecha' in df.columns: df['Fecha'] = df['Fecha'].astype(str).fillna("")
     return df
 
-# --- GENERADOR DE TICKET HTML (VERSIÓN CENTRADO PERFECTO) ---
-def generar_html_ticket(carrito, total, fecha, metodo):
+# --- FUNCIÓN PARA CARGAR EL LOGO EN BASE64 ---
+def get_image_base64(path):
+    try:
+        with open(path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        return f"data:image/png;base64,{encoded_string}"
+    except:
+        return "" # Si no hay logo, no pone nada
+
+# --- GENERADOR DE TICKET "PREMIUM" (ESTILO IMAGEN) ---
+def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono):
     
+    # 1. Cargar Logo
+    logo_b64 = get_image_base64("Logo-Final.png")
+    img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 60px; height: auto;">' if logo_b64 else ""
+
+    # 2. Generar lista de ítems con nuevo diseño
     items_html = ""
     for item in carrito:
         items_html += f"""
-        <tr>
-            <td colspan="2" style="padding-top: 2px; font-weight: bold; font-size: 11px; text-align: left;">{item['Producto']}</td>
-        </tr>
-        <tr>
-            <td style="padding-bottom: 2px; border-bottom: 1px dashed #000; font-size: 11px; text-align: left;">
-                {item['Cantidad']:.3f} x {item['PrecioUnit']:.2f}
-            </td>
-            <td style="padding-bottom: 2px; border-bottom: 1px dashed #000; font-size: 11px; text-align: right;">
-                {item['Subtotal']:.2f}
-            </td>
-        </tr>
+        <div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+            <div style="font-weight: bold; font-size: 12px; color: #333;">{item['Producto']}</div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #666;">
+                <div>{item['Cantidad']:.3f} kg x {item['PrecioUnit']:.2f} Bs</div>
+                <div style="font-weight: bold; color: #333;">{item['Subtotal']:.2f} Bs</div>
+            </div>
+        </div>
         """
 
+    # 3. HTML COMPLETO
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <style>
-            /* CONFIGURACIÓN DE PÁGINA PARA IMPRESORA TÉRMICA */
-            @page {{
-                margin: 0; /* Quitamos márgenes del navegador */
-                size: 58mm auto; /* Indicamos tamaño de papel */
-            }}
-            
+            @page {{ margin: 0; size: 58mm auto; }}
             body {{
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                background-color: #fff;
-                font-family: 'Courier New', monospace;
-                color: #000;
-                text-align: center; /* Centrar todo el contenido del body */
+                margin: 0; padding: 8px; width: 100%;
+                background-color: #fff; font-family: 'Helvetica', 'Arial', sans-serif;
+                color: #333;
             }}
+            .no-print {{ text-align: center; margin-bottom: 10px; }}
+            button {{ background-color: #000; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }}
+            
+            /* Header con Logo y Título */
+            .header-grid {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }}
+            .logo-container {{ flex: 0 0 auto; margin-right: 10px; }}
+            .biz-info {{ flex: 1; text-align: right; }}
+            .biz-name {{ font-size: 14px; font-weight: bold; margin: 0; color: #8B0000; }}
+            .biz-details {{ font-size: 9px; color: #666; margin: 2px 0; }}
+            .receipt-id {{ font-size: 12px; font-weight: bold; margin-top: 5px; }}
+            
+            .section-title {{ font-size: 11px; font-weight: bold; border-bottom: 2px solid #333; padding-bottom: 4px; margin: 10px 0; }}
+            
+            /* Totales */
+            .totals-container {{ margin-top: 15px; text-align: right; }}
+            .total-line {{ font-size: 16px; font-weight: bold; margin: 5px 0; }}
+            .payment-line {{ font-size: 11px; color: #666; }}
+            
+            .footer {{ text-align: center; margin-top: 20px; font-size: 10px; color: #666; border-top: 1px solid #eee; padding-top: 10px; }}
 
-            /* CONTENEDOR FLOTANTE CENTRADO */
-            .ticket-container {{
-                width: 100%;
-                max-width: 46mm; /* ANCHO SEGURO (Menos que 57mm para evitar bordes) */
-                margin: 0 auto;  /* ESTO ES LO QUE CENTRA EL TICKET */
-                padding: 5px 0;
-                display: inline-block; /* Ayuda al centrado */
-                text-align: left; /* El texto interno vuelve a la izquierda */
-            }}
-
-            .header, .footer {{ text-align: center; }}
-            .title {{ font-size: 14px; font-weight: bold; margin: 0; }}
-            .subtitle {{ font-size: 11px; margin: 0; }}
-            
-            .divider {{ 
-                border-top: 1px dashed black; 
-                margin: 5px 0; 
-                width: 100%;
-            }}
-            
-            table {{ width: 100%; border-collapse: collapse; }}
-            
-            .total {{ 
-                font-size: 16px; 
-                font-weight: bold; 
-                text-align: right; 
-                margin-top: 5px; 
-            }}
-            
-            .no-print {{ text-align: center; margin-bottom: 15px; padding-top: 10px; }}
-            button {{ background-color: #000; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }}
-
-            @media print {{
-                .no-print {{ display: none; }}
-                body, .ticket-container {{ width: 100%; margin: 0 auto; }}
-            }}
+            @media print {{ .no-print {{ display: none; }} }}
         </style>
     </head>
     <body>
-        <div class="no-print">
-            <button onclick="window.print()">🖨️ IMPRIMIR</button>
-        </div>
+        <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR TICKET</button></div>
 
-        <div class="ticket-container">
-            <div class="header">
-                <p class="title">EL CORTE BENIANO</p>
-                <p class="subtitle">Carne de Primera</p>
+        <div class="header-grid">
+            <div class="logo-container">{img_tag}</div>
+            <div class="biz-info">
+                <p class="biz-name">EL CORTE BENIANO</p>
+                <p class="biz-details">{direccion}</p>
+                <p class="biz-details">Tel: {telefono}</p>
+                <p class="receipt-id">{recibo_id}</p>
             </div>
-            
-            <div class="divider"></div>
-            
-            <div style="font-size: 11px; text-align: center;">
-                {fecha}<br>
-                <b>Pago: {metodo}</b>
-            </div>
-            
-            <div class="divider"></div>
-            
-            <table>{items_html}</table>
-            
-            <div class="divider"></div>
-            <div class="total">TOTAL: {total:.2f} Bs</div>
-            <div class="divider"></div>
-            
-            <div class="footer">
-                <p style="font-size: 10px; margin: 5px 0;">¡Gracias por su compra!</p>
-            </div>
+        </div>
+        
+        <div class="section-title">Detalle de Compra ({len(carrito)} ítems)</div>
+        <div>{items_html}</div>
+        
+        <div class="totals-container">
+            <div class="total-line">Total: {total:.2f} Bs</div>
+            <div class="payment-line">Pago: {metodo}</div>
+        </div>
+        
+        <div class="footer">
+            <p style="font-weight: bold; margin: 0;">¡Gracias por su compra!</p>
+            <p style="margin: 2px 0;">{fecha}</p>
         </div>
 
         <script>
