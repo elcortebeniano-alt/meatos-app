@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 import streamlit.components.v1 as components
 
-# --- LIBRERIAS IA Y VISIÓN ---
+# --- LIBRERIAS IA ---
 import google.generativeai as genai
 from PIL import Image
 
@@ -28,43 +28,10 @@ styles.cargar_css()
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 else:
-    st.error("⚠️ Falta configurar la GOOGLE_API_KEY en los Secrets.")
+    st.error("⚠️ Falta configurar GOOGLE_API_KEY en Secrets.")
 
 def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 def get_bolivia_date(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d")
-
-# --- FUNCIÓN CEREBRO: GEMINI VISION (ROBUSTA) ---
-def analizar_recibo_con_ia(image_file):
-    try:
-        # CAMBIO: Usamos 'gemini-1.5-pro' que es más robusto si 'flash' falla
-        # Si este falla, el 'except' nos avisará.
-        model = genai.GenerativeModel('gemini-1.5-pro') 
-        img = Image.open(image_file)
-        
-        prompt = """
-        Eres un experto cajero. Analiza esta imagen de un recibo o nota de venta.
-        Extrae la información en formato JSON estricto.
-        Estructura requerida:
-        {
-            "items": [
-                {"producto": "Nombre exacto del corte", "peso_kg": 0.00, "precio_unitario": 0.00, "subtotal": 0.00}
-            ],
-            "total_pagado": 0.00,
-            "metodo_pago": "Efectivo" (o "QR", "Transferencia" si se menciona)
-        }
-        Reglas:
-        1. Si el peso está en gramos, conviértelo a KG (ej: 500g -> 0.5).
-        2. Si no ves el peso explícito pero ves el precio total y unitario, calcula el peso (Total / Unitario).
-        3. Devuelve SOLO el JSON, sin texto adicional ni markdown.
-        """
-        
-        response = model.generate_content([prompt, img])
-        texto_limpio = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(texto_limpio)
-    except Exception as e:
-        # Fallback de error
-        st.error(f"Error IA: {e}")
-        return None
 
 # --- CACHE ---
 @st.cache_data(ttl=3600) 
@@ -88,7 +55,6 @@ def leer_qr_desde_imagen(image_file):
         return None
     except: return None
 
-# --- PROCESAR QR TEXTO ---
 def procesar_codigo_qr(data_qr):
     try:
         partes = data_qr.split('|')
@@ -110,6 +76,40 @@ def procesar_codigo_qr(data_qr):
             else: return "❌ Producto no existe."
         else: return "❌ QR no es de MeatOS."
     except: return "❌ Error formato."
+
+# --- FUNCIÓN CEREBRO: GEMINI VISION (AUTO-DETECTAR) ---
+def analizar_recibo_con_ia(image_file):
+    img = Image.open(image_file)
+    prompt = """
+    Eres un experto cajero. Analiza esta imagen de un recibo.
+    Extrae la información en formato JSON estricto:
+    {
+        "items": [
+            {"producto": "Nombre corte", "peso_kg": 0.00, "precio_unitario": 0.00, "subtotal": 0.00}
+        ],
+        "total_pagado": 0.00,
+        "metodo_pago": "Efectivo"
+    }
+    Si peso en gramos -> convierte a KG.
+    SOLO JSON.
+    """
+    
+    # LISTA DE MODELOS A PROBAR EN ORDEN
+    modelos_a_probar = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+    
+    for nombre_modelo in modelos_a_probar:
+        try:
+            model = genai.GenerativeModel(nombre_modelo)
+            response = model.generate_content([prompt, img])
+            texto_limpio = response.text.replace("```json", "").replace("```", "").strip()
+            return json.loads(texto_limpio)
+        except Exception as e:
+            # Si falla, intentamos el siguiente, pero guardamos el error para mostrar si todos fallan
+            print(f"Fallo con {nombre_modelo}: {e}")
+            continue
+            
+    st.error("❌ No se pudo leer con ningún modelo de IA disponible. Verifica tu API Key.")
+    return None
 
 # 2. CONEXIÓN
 if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.conectar_google_sheets()
@@ -187,7 +187,22 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v10.1 | Stable AI")
+    st.caption("MeatOS v10.2 | Auto-Model")
+    
+    # --- DIAGNOSTICO IA (SOLO PARA VERIFICAR) ---
+    with st.expander("🩺 Diagnóstico IA"):
+        if st.button("Listar Modelos Disponibles"):
+            try:
+                modelos = genai.list_models()
+                encontrados = []
+                for m in modelos:
+                    if 'generateContent' in m.supported_generation_methods:
+                        encontrados.append(m.name)
+                        st.write(f"- {m.name}")
+                if not encontrados:
+                    st.error("Tu API Key no tiene acceso a modelos de generación.")
+            except Exception as e:
+                st.error(f"Error conexión IA: {e}")
 
 if rol_actual == "Admin":
     tab1, tab_import, tab2, tab3 = st.tabs(["🛒 VENTA MANUAL", "📥 IMPORTAR KYTE", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -207,12 +222,13 @@ with tab_import:
         with c1: st.image(uploaded_file, caption="Recibo", use_container_width=True)
         with c2:
             if st.button("✨ ANALIZAR CON IA", type="primary"):
-                with st.spinner("🤖 Leyendo... (Esto puede tomar unos segundos)"):
+                with st.spinner("🤖 Leyendo..."):
+                    # EL CÓDIGO AHORA PROBARÁ VARIOS MODELOS AUTOMÁTICAMENTE
                     datos = analizar_recibo_con_ia(uploaded_file)
                     if datos:
                         st.session_state['datos_ia_pendientes'] = datos
                         st.success("¡Leído!")
-                    else: st.error("No se pudo leer.")
+                    else: st.error("Fallo de lectura.")
 
             if st.session_state['datos_ia_pendientes']:
                 datos = st.session_state['datos_ia_pendientes']
@@ -262,9 +278,7 @@ with tab_import:
 with tab1:
     with st.container(border=True):
         st.caption("📷 ESCANEAR QR / PISTOLA")
-        # Input Pistola (Oculto visualmente en cel, util en PC)
         codigo_pistola = st.text_input("Haz clic y dispara pistola:", key="input_pistola_qr", placeholder="Esperando lector...")
-        # Input Camara (Solo movil)
         img_buffer = st.camera_input("Cámara Celular") if modo_movil else None
 
         res = None
@@ -452,7 +466,7 @@ with tab1:
         components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
 
 # ==============================================================================
-# SECCIONES ADMIN (RESUMIDAS PERO FUNCIONALES IGUAL QUE ANTES)
+# SECCIONES ADMIN (IGUAL QUE ANTES)
 # ==============================================================================
 if rol_actual == "Admin":
     with tab2:
