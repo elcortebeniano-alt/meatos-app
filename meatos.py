@@ -81,7 +81,7 @@ with st.sidebar:
     st.caption(f"🏷️ {rol_actual} | 📍 {sucursal_actual}")
     if st.button("🔒 Cerrar Sesión", type="primary"): st.session_state['user_info'] = None; st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v5.5 | Math Fix")
+    st.caption("MeatOS v5.6 | Canje Puntos")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -150,20 +150,21 @@ with tab1:
         if st.session_state['carrito']:
             df_c = pd.DataFrame(st.session_state['carrito'])
             st.dataframe(df_c[["Producto", "Cantidad", "PrecioUnit", "Subtotal"]], use_container_width=True, hide_index=True)
-            total = df_c['Subtotal'].sum()
-            total_ganancia = sum([(r['PrecioUnit'] - r['CostoUnit']) * r['Cantidad'] for r in st.session_state['carrito']])
+            total_bruto = df_c['Subtotal'].sum()
+            total_ganancia_bruta = sum([(r['PrecioUnit'] - r['CostoUnit']) * r['Cantidad'] for r in st.session_state['carrito']])
             
-            st.markdown(f"<div style='background-color:white;padding:15px;border-radius:10px;text-align:right;border:2px solid #8B0000;margin-bottom:20px;'><span style='font-size:36px;font-weight:800;color:#8B0000;'>{total:.2f} Bs</span></div>", unsafe_allow_html=True)
             st.write("---")
             
-            # CRM
+            # --- CRM & PAGO ---
             c1, c2 = st.columns([1, 1.5])
             cel = c1.text_input("📱 WhatsApp / Cliente", placeholder="70712345", key="input_celular")
             metodo = c2.radio("Pago", ["💵 Efectivo", "📱 QR / Banco"], horizontal=True)
             
             nombre_cliente_ticket = ""
             cliente_existente = False
+            puntos_disponibles = 0
             
+            # Identificación Cliente
             if cel:
                 df_cli = st.session_state['clientes']
                 df_cli['Telefono'] = df_cli['Telefono'].astype(str)
@@ -171,30 +172,64 @@ with tab1:
                 if not cliente_found.empty:
                     datos_cli = cliente_found.iloc[0]
                     nombre_cliente_ticket = datos_cli['Nombre']
-                    puntos = datos_cli['Puntos'] if datos_cli['Puntos'] else 0
-                    st.success(f"👋 ¡Hola **{nombre_cliente_ticket}**! (Puntos: {puntos})")
+                    # Convertir puntos a entero seguro
+                    try: puntos_disponibles = int(float(datos_cli['Puntos']))
+                    except: puntos_disponibles = 0
+                    
+                    st.success(f"👋 ¡Hola **{nombre_cliente_ticket}**! Tienes **{puntos_disponibles} Puntos**")
                     cliente_existente = True
                 else:
                     nombre_cliente_ticket = st.text_input("📝 Nombre del Cliente Nuevo:", key="new_name_cli")
-                    if nombre_cliente_ticket: st.info(f"Se creará la ficha para: {nombre_cliente_ticket}")
+                    if nombre_cliente_ticket: st.info(f"Nuevo registro: {nombre_cliente_ticket}")
 
-            pago, cambio, qr_vuelto, cobrar = 0.0, 0.0, False, True
-            if metodo == "💵 Efectivo":
-                pago = st.number_input("Recibido:", 0.0, step=0.5)
-                if pago >= total:
-                    cambio = pago - total
-                    st.info(f"💰 Vuelto: **{cambio:.2f} Bs**")
-                    if cambio > 0: qr_vuelto = st.checkbox("🔄 Vuelto por QR")
-                else: 
-                    if pago > 0: st.error(f"Falta: {total-pago:.2f}"); cobrar = False
-                    else: st.warning("Ingrese monto"); cobrar = False
+            # --- SISTEMA DE CANJE ---
+            descuento_puntos = 0.0
+            puntos_usados = 0
             
+            if puntos_disponibles > 0:
+                # REGLA: 1 Punto = 1 Bs
+                valor_en_bs = puntos_disponibles * 1.0 
+                usar_puntos = st.checkbox(f"💎 Canjear Puntos (Tienes {valor_en_bs:.2f} Bs de saldo)")
+                
+                if usar_puntos:
+                    if valor_en_bs >= total_bruto:
+                        descuento_puntos = total_bruto
+                        puntos_usados = int(total_bruto) # 1 pto = 1 bs
+                    else:
+                        descuento_puntos = valor_en_bs
+                        puntos_usados = puntos_disponibles
+                    
+                    st.markdown(f"**📉 Descuento por Puntos:** -{descuento_puntos:.2f} Bs")
+
+            total_a_pagar = total_bruto - descuento_puntos
+            
+            # MOSTRAR TOTAL GIGANTE
+            st.markdown(f"<div style='background-color:white;padding:15px;border-radius:10px;text-align:right;border:2px solid #8B0000;margin-bottom:20px;'><span style='font-size:36px;font-weight:800;color:#8B0000;'>{total_a_pagar:.2f} Bs</span></div>", unsafe_allow_html=True)
+
+            # --- VALIDACIÓN PAGO ---
+            pago, cambio, qr_vuelto, cobrar = 0.0, 0.0, False, True
+            
+            if total_a_pagar > 0:
+                if metodo == "💵 Efectivo":
+                    pago = st.number_input("Recibido:", 0.0, step=0.5)
+                    if pago >= total_a_pagar:
+                        cambio = pago - total_a_pagar
+                        st.info(f"💰 Vuelto: **{cambio:.2f} Bs**")
+                        if cambio > 0: qr_vuelto = st.checkbox("🔄 Vuelto por QR")
+                    else: 
+                        if pago > 0: st.error(f"Falta: {total_a_pagar-pago:.2f}"); cobrar = False
+                        else: st.warning("Ingrese monto"); cobrar = False
+            else:
+                st.success("✨ ¡Pago cubierto totalmente con puntos!")
+            
+            # --- BOTONES FINALES ---
             b1, b2 = st.columns([1, 2])
             if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
             if b2.button("✅ COBRAR", type="primary", disabled=not cobrar):
                 now_str = get_bolivia_time()
                 recibo_id = f"#REC-{now_str.replace('-','').replace(':','').replace(' ','-')}"
                 
+                # 1. ACTUALIZAR STOCK Y DETALLES
                 detalles = []
                 for item in st.session_state['carrito']:
                     idx = st.session_state['productos'].index[st.session_state['productos']['Producto'] == item['Producto']].tolist()[0]
@@ -208,8 +243,13 @@ with tab1:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(detalles)], ignore_index=True)
                     backend.guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
+                # 2. GUARDAR FINANZAS (REGISTRAMOS LO QUE ENTRÓ DE DINERO REAL)
                 txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
-                fin = pd.DataFrame([{'Fecha': now_str, 'Detalle': f"Venta {recibo_id}: {txt}", 'Tipo': "Ingreso", 'Monto': total, 'MetodoPago': metodo, 'Ganancia': total_ganancia, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
+                if puntos_usados > 0: txt += f" [CANJE: {puntos_usados} Pts]"
+                
+                # Si pagó todo con puntos, el monto 'dinero' es 0, pero la venta existió
+                # Para cuadrar caja, registramos solo el dinero que entró (total_a_pagar)
+                fin = pd.DataFrame([{'Fecha': now_str, 'Detalle': f"Venta {recibo_id}: {txt}", 'Tipo': "Ingreso", 'Monto': total_a_pagar, 'MetodoPago': metodo if total_a_pagar > 0 else "Puntos", 'Ganancia': total_ganancia_bruta - descuento_puntos, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], fin], ignore_index=True)
                 
                 if metodo == "💵 Efectivo" and qr_vuelto and cambio > 0:
@@ -220,28 +260,40 @@ with tab1:
                     st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], swap], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
 
+                # 3. ACTUALIZAR CRM (Restar Puntos Usados + Sumar Nuevos)
                 if cel and nombre_cliente_ticket:
                     df_cli = st.session_state['clientes']
                     df_cli['Telefono'] = df_cli['Telefono'].astype(str)
+                    
+                    # Puntos que gana por lo que pagó (SOLO POR EL DINERO PAGADO)
+                    puntos_ganados = int(total_a_pagar / 10)
+                    
                     if cliente_existente:
                         idx_cli = df_cli.index[df_cli['Telefono'] == cel].tolist()[0]
                         gasto_prev = float(df_cli.at[idx_cli, 'TotalGastado']) if df_cli.at[idx_cli, 'TotalGastado'] else 0.0
-                        df_cli.at[idx_cli, 'TotalGastado'] = gasto_prev + total
+                        df_cli.at[idx_cli, 'TotalGastado'] = gasto_prev + total_a_pagar
                         df_cli.at[idx_cli, 'UltimaCompra'] = now_str
-                        puntos_nuevos = int(total / 10)
-                        puntos_prev = int(df_cli.at[idx_cli, 'Puntos']) if df_cli.at[idx_cli, 'Puntos'] else 0
-                        df_cli.at[idx_cli, 'Puntos'] = puntos_prev + puntos_nuevos
+                        
+                        # CALCULO FINAL DE PUNTOS
+                        puntos_actuales = int(float(df_cli.at[idx_cli, 'Puntos'])) if df_cli.at[idx_cli, 'Puntos'] else 0
+                        nuevo_saldo_puntos = puntos_actuales - puntos_usados + puntos_ganados
+                        df_cli.at[idx_cli, 'Puntos'] = nuevo_saldo_puntos
                     else:
-                        new_cli = pd.DataFrame([{'Telefono': cel, 'Nombre': nombre_cliente_ticket, 'TotalGastado': total, 'UltimaCompra': now_str, 'Puntos': int(total / 10)}])
+                        # Si es nuevo, no pudo usar puntos, solo gana
+                        new_cli = pd.DataFrame([{'Telefono': cel, 'Nombre': nombre_cliente_ticket, 'TotalGastado': total_a_pagar, 'UltimaCompra': now_str, 'Puntos': puntos_ganados}])
                         st.session_state['clientes'] = pd.concat([st.session_state['clientes'], new_cli], ignore_index=True)
+                    
                     backend.guardar_data(sheet, "clientes", st.session_state['clientes'])
 
+                # 4. TICKET
                 lineas_txt = "\n".join([f"> {p['Producto']} ({p['Cantidad']:.3f}kg) - {p['Subtotal']:.2f}Bs" for p in st.session_state['carrito']])
-                msg_txt = f"*** EL CORTE BENIANO ***\nRecibo: {recibo_id}\nCliente: {nombre_cliente_ticket}\nAtiende: {usuario_actual}\nFecha: {now_str}\n{lineas_txt}\n----------------\nTOTAL: {total:.2f} Bs\nPago: {metodo}"
+                if puntos_usados > 0: lineas_txt += f"\n💎 DESC. PUNTOS: -{descuento_puntos:.2f} Bs"
+                
+                msg_txt = f"*** EL CORTE BENIANO ***\nRecibo: {recibo_id}\nCliente: {nombre_cliente_ticket}\nAtiende: {usuario_actual}\nFecha: {now_str}\n{lineas_txt}\n----------------\nTOTAL PAGADO: {total_a_pagar:.2f} Bs\nPago: {metodo}"
                 msg_encoded = quote(msg_txt)
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg_encoded}" if cel else f"https://wa.me/?text={msg_encoded}"
                 
-                html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO, usuario_actual, nombre_cliente_ticket)
+                html_raw = backend.generar_html_ticket(st.session_state['carrito'], total_bruto, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO, usuario_actual, nombre_cliente_ticket)
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
                 st.session_state['carrito'] = []
                 st.balloons(); st.success("¡Cobrado!"); time.sleep(1); st.rerun()
@@ -261,9 +313,7 @@ with tab1:
     hoy = get_bolivia_date()
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     if not df_hoy.empty:
-        # AQUÍ ESTÁ EL ARREGLO MÁGICO: Forzamos a que 'Monto' sea número
         df_hoy['Monto'] = pd.to_numeric(df_hoy['Monto'], errors='coerce').fillna(0.0)
-        
         v_qr = df_hoy[df_hoy['MetodoPago'].str.contains('QR', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
         v_efec = df_hoy[df_hoy['MetodoPago'].str.contains('Efectivo', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
         c1, c2 = st.columns(2)
@@ -303,7 +353,6 @@ if rol_actual == "Admin":
             df_f = st.session_state['finanzas']
             if not df_f.empty and 'Ganancia' in df_f.columns:
                 df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
-                # FIX NUMERICO TAMBIEN AQUI
                 df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
                 df_f['Monto'] = pd.to_numeric(df_f['Monto'], errors='coerce').fillna(0.0)
                 
