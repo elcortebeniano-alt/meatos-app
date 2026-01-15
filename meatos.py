@@ -81,7 +81,7 @@ with st.sidebar:
     st.caption(f"🏷️ {rol_actual} | 📍 {sucursal_actual}")
     if st.button("🔒 Cerrar Sesión", type="primary"): st.session_state['user_info'] = None; st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v5.6 | Canje Puntos")
+    st.caption("MeatOS v5.7 | 1% Cashback")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -172,7 +172,6 @@ with tab1:
                 if not cliente_found.empty:
                     datos_cli = cliente_found.iloc[0]
                     nombre_cliente_ticket = datos_cli['Nombre']
-                    # Convertir puntos a entero seguro
                     try: puntos_disponibles = int(float(datos_cli['Puntos']))
                     except: puntos_disponibles = 0
                     
@@ -187,7 +186,6 @@ with tab1:
             puntos_usados = 0
             
             if puntos_disponibles > 0:
-                # REGLA: 1 Punto = 1 Bs
                 valor_en_bs = puntos_disponibles * 1.0 
                 usar_puntos = st.checkbox(f"💎 Canjear Puntos (Tienes {valor_en_bs:.2f} Bs de saldo)")
                 
@@ -243,12 +241,10 @@ with tab1:
                     st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(detalles)], ignore_index=True)
                     backend.guardar_data(sheet, "detalles", st.session_state['detalles'])
                 
-                # 2. GUARDAR FINANZAS (REGISTRAMOS LO QUE ENTRÓ DE DINERO REAL)
+                # 2. GUARDAR FINANZAS
                 txt = ", ".join([f"{p['Producto']} ({p['Cantidad']:.3f}kg)" for p in st.session_state['carrito']])
                 if puntos_usados > 0: txt += f" [CANJE: {puntos_usados} Pts]"
                 
-                # Si pagó todo con puntos, el monto 'dinero' es 0, pero la venta existió
-                # Para cuadrar caja, registramos solo el dinero que entró (total_a_pagar)
                 fin = pd.DataFrame([{'Fecha': now_str, 'Detalle': f"Venta {recibo_id}: {txt}", 'Tipo': "Ingreso", 'Monto': total_a_pagar, 'MetodoPago': metodo if total_a_pagar > 0 else "Puntos", 'Ganancia': total_ganancia_bruta - descuento_puntos, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], fin], ignore_index=True)
                 
@@ -260,13 +256,13 @@ with tab1:
                     st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], swap], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
 
-                # 3. ACTUALIZAR CRM (Restar Puntos Usados + Sumar Nuevos)
+                # 3. ACTUALIZAR CRM (Restar Puntos Usados + Sumar Nuevos 1%)
                 if cel and nombre_cliente_ticket:
                     df_cli = st.session_state['clientes']
                     df_cli['Telefono'] = df_cli['Telefono'].astype(str)
                     
-                    # Puntos que gana por lo que pagó (SOLO POR EL DINERO PAGADO)
-                    puntos_ganados = int(total_a_pagar / 10)
+                    # --- AQUÍ ESTÁ EL CAMBIO DEL 1% ---
+                    puntos_ganados = int(total_a_pagar * 0.01) # 1% del total pagado
                     
                     if cliente_existente:
                         idx_cli = df_cli.index[df_cli['Telefono'] == cel].tolist()[0]
@@ -274,12 +270,11 @@ with tab1:
                         df_cli.at[idx_cli, 'TotalGastado'] = gasto_prev + total_a_pagar
                         df_cli.at[idx_cli, 'UltimaCompra'] = now_str
                         
-                        # CALCULO FINAL DE PUNTOS
+                        # CALCULO FINAL
                         puntos_actuales = int(float(df_cli.at[idx_cli, 'Puntos'])) if df_cli.at[idx_cli, 'Puntos'] else 0
                         nuevo_saldo_puntos = puntos_actuales - puntos_usados + puntos_ganados
                         df_cli.at[idx_cli, 'Puntos'] = nuevo_saldo_puntos
                     else:
-                        # Si es nuevo, no pudo usar puntos, solo gana
                         new_cli = pd.DataFrame([{'Telefono': cel, 'Nombre': nombre_cliente_ticket, 'TotalGastado': total_a_pagar, 'UltimaCompra': now_str, 'Puntos': puntos_ganados}])
                         st.session_state['clientes'] = pd.concat([st.session_state['clientes'], new_cli], ignore_index=True)
                     
@@ -309,7 +304,7 @@ with tab1:
         with c_t2: st.caption("Vista Previa:"); components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
 
     st.divider()
-    # ARQUEO (CON FIX NUMERICO)
+    # ARQUEO
     hoy = get_bolivia_date()
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
     if not df_hoy.empty:
