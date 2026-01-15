@@ -7,4 +7,4 @@ pillow
 opencv-python-headless
 pyzbar
 numpy
-google-generativeai
+google-generativeai>=0.7.2
