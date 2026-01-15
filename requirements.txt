@@ -2,3 +2,8 @@ streamlit
 pandas
 gspread
 oauth2client
+qrcode
+pillow
+opencv-python-headless
+pyzbar
+numpy
