@@ -25,8 +25,7 @@ if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.
 sheet = st.session_state['sheet_obj']
 
 if sheet:
-    # CARGAR TABLAS (Ahora incluimos 'usuarios')
-    # Nota: Agregamos 'Usuario' y 'Sucursal' a finanzas para el futuro
+    # CARGAR TABLAS
     if 'finanzas' not in st.session_state: st.session_state['finanzas'] = backend.cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago', 'Ganancia', 'Usuario', 'Sucursal'])
     if 'productos' not in st.session_state: st.session_state['productos'] = backend.cargar_data(sheet, "productos", ['Producto', 'Costo', 'PrecioVenta', 'Categoria', 'StockActual'])
     if 'detalles' not in st.session_state: st.session_state['detalles'] = backend.cargar_data(sheet, "detalles", ['Fecha', 'Producto', 'Categoria', 'PesoKg', 'CostoUnit', 'PrecioVentaUnit', 'Subtotal', 'Ganancia', 'Usuario', 'Sucursal'])
@@ -38,8 +37,6 @@ else:
 if 'carrito' not in st.session_state: st.session_state['carrito'] = []
 if 'ultimo_ticket' not in st.session_state: st.session_state['ultimo_ticket'] = None 
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
-
-# VARIABLE DE SESIÓN DE USUARIO
 if 'user_info' not in st.session_state: st.session_state['user_info'] = None
 
 # LIMPIEZA
@@ -67,11 +64,9 @@ if st.session_state['user_info'] is None:
             
             if submitted:
                 df_u = st.session_state['usuarios']
-                # Convertir a string para comparar
                 df_u['Usuario'] = df_u['Usuario'].astype(str)
                 df_u['Password'] = df_u['Password'].astype(str)
                 
-                # Buscar usuario
                 user_found = df_u[(df_u['Usuario'] == user_input) & (df_u['Password'] == pass_input)]
                 
                 if not user_found.empty:
@@ -89,17 +84,16 @@ if st.session_state['user_info'] is None:
                         st.error("Usuario desactivado.")
                 else:
                     st.error("Usuario o contraseña incorrectos.")
-    st.stop() # DETIENE TODO SI NO HAY LOGIN
+    st.stop()
 
 # ==============================================================================
-# 🚀 APLICACIÓN PRINCIPAL (SOLO SI LOGUEADO)
+# 🚀 APLICACIÓN PRINCIPAL
 # ==============================================================================
 usuario_actual = st.session_state['user_info']['Nombre']
 rol_actual = st.session_state['user_info']['Rol']
 sucursal_actual = st.session_state['user_info']['Sucursal']
 user_id = st.session_state['user_info']['Usuario']
 
-# --- SIDEBAR PERSONALIZADO ---
 with st.sidebar:
     if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", use_container_width=True)
     st.markdown("---")
@@ -110,22 +104,19 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v5.0 | MultiUser")
+    st.caption("MeatOS v5.1 | Full Admin")
 
-# --- NAVEGACIÓN SEGÚN ROLES ---
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
 else:
-    # Si es Vendedor, solo ve Venta
     tab1, = st.tabs(["🛒 PUNTO DE VENTA"])
 
 # ==============================================================================
-# PESTAÑA 1: VENTA (ACCESIBLE PARA TODOS)
+# PESTAÑA 1: VENTA
 # ==============================================================================
 with tab1:
     st.title(f"Caja - {sucursal_actual}")
     
-    # CAJA CHICA
     with st.expander("💸 Gastos / Movimientos de Caja"):
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         opciones = ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"]
@@ -148,8 +139,6 @@ with tab1:
                 st.success("✅ Registrado"); time.sleep(1); st.rerun()
 
     st.divider()
-    
-    # INTERFAZ DE VENTA
     col_izq, col_der = st.columns([1.2, 1.8], gap="large")
 
     with col_izq:
@@ -162,7 +151,6 @@ with tab1:
                 data = df_prod[df_prod['Producto'] == prod_sel].iloc[0]
                 precio_base = float(data['PrecioVenta'])
                 with st.container(border=True):
-                    # SOLO ADMIN PUEDE CAMBIAR PRECIO MANUALMENTE (Opcional, aquí lo dejo abierto pero podríamos bloquearlo)
                     check = st.checkbox("🔓 Modificar Precio", key="check_precio_manual")
                     precio_final = st.number_input("Precio Venta", value=precio_base, step=0.5, key="input_precio_final") if check else precio_base
                     st.metric("Stock Disp.", f"{float(data.get('StockActual',0.0)):.3f} Kg")
@@ -213,7 +201,6 @@ with tab1:
             if b2.button("✅ COBRAR", type="primary", disabled=not cobrar, key="btn_cobrar_final"):
                 now_str = get_bolivia_time()
                 recibo_id = f"#REC-{now_str.replace('-','').replace(':','').replace(' ','-')}"
-
                 detalles = []
                 for item in st.session_state['carrito']:
                     idx = st.session_state['productos'].index[st.session_state['productos']['Producto'] == item['Producto']].tolist()[0]
@@ -254,13 +241,10 @@ with tab1:
                 msg_encoded = quote(msg_txt)
                 link_wa = f"https://wa.me/591{cel.strip()}?text={msg_encoded}" if cel else f"https://wa.me/?text={msg_encoded}"
                 
-                # Pasamos el nombre del usuario al ticket
                 html_raw = backend.generar_html_ticket(st.session_state['carrito'], total, now_str, metodo, recibo_id, DIRECCION_NEGOCIO, TELEFONO_NEGOCIO, usuario_actual)
-
                 st.session_state['ultimo_ticket'] = {'link_wa': link_wa, 'html_raw': html_raw}
                 st.session_state['carrito'] = []
                 st.balloons(); st.success("¡Cobrado!"); time.sleep(1); st.rerun()
-
         else:
             st.info("Carrito vacío.")
 
@@ -269,16 +253,24 @@ with tab1:
         c_t1, c_t2 = st.columns([1, 1])
         with c_t1:
             st.markdown(f"<a href='{st.session_state['ultimo_ticket']['link_wa']}' target='_blank' class='btn-whatsapp'>📲 ENVIAR WHATSAPP</a>", unsafe_allow_html=True)
-            st.write("")
             if st.button("❌ CERRAR / NUEVA VENTA", key="btn_cerrar_ticket"): 
-                st.session_state['ultimo_ticket'] = None
-                st.rerun()
+                st.session_state['ultimo_ticket'] = None; st.rerun()
         with c_t2:
-            st.caption("Vista Previa:")
-            components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
+            st.caption("Vista Previa:"); components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
+
+    st.divider()
+    st.subheader("📊 Arqueo (Hoy)")
+    hoy = get_bolivia_date()
+    df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
+    if not df_hoy.empty:
+        v_qr = df_hoy[df_hoy['MetodoPago'].str.contains('QR', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
+        v_efec = df_hoy[df_hoy['MetodoPago'].str.contains('Efectivo', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
+        c1, c2 = st.columns(2)
+        c1.metric("Ventas Totales", f"{(v_qr + v_efec):.2f} Bs")
+        c2.metric("EFECTIVO CAJA", f"{v_efec:.2f} Bs")
 
 # ==============================================================================
-# SECCIONES DE ADMIN (INVENTARIO Y GERENCIA)
+# SECCIONES DE ADMIN
 # ==============================================================================
 if rol_actual == "Admin":
     with tab2:
@@ -299,56 +291,98 @@ if rol_actual == "Admin":
 
     with tab3:
         st.header("📊 Gerencia & Reportes")
-        
-        # --- SUB-PESTAÑAS DE GERENCIA ---
         g_tab1, g_tab2 = st.tabs(["📈 FINANZAS", "👥 USUARIOS"])
         
-        # 1. FINANZAS
+        # --- 1. FINANZAS (RESTAURADO COMPLETO) ---
         with g_tab1:
             df_f = st.session_state['finanzas']
             if not df_f.empty and 'Ganancia' in df_f.columns:
                 df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
                 df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
                 
-                # Filtro
+                # 1. FILTRO
                 with st.container(border=True):
                     c_filtro1, c_filtro2 = st.columns([2, 1])
                     with c_filtro1:
                         today = datetime.utcnow() - timedelta(hours=4)
                         start_month = today.replace(day=1)
                         rango_fechas = st.date_input("Rango de Fechas:", value=(start_month, today), max_value=today, format="DD/MM/YYYY", key="filtro_gerencia")
+                    with c_filtro2:
+                        st.write(""); st.info("Selecciona 'Inicio' y 'Fin'.")
                 
+                # 2. PROCESAMIENTO
                 if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
                     inicio, fin = rango_fechas
                     mask = (df_f['Fecha_dt'].dt.date >= inicio) & (df_f['Fecha_dt'].dt.date <= fin)
                     df_filtrado = df_f.loc[mask]
-                    
-                    # KPIs
-                    ganancia_periodo = df_filtrado['Ganancia'].sum()
-                    total_periodo = df_filtrado['Monto'].sum()
-                    
-                    st.subheader("Resultados")
-                    k1, k2 = st.columns(2)
-                    k1.metric("💰 GANANCIA", f"{ganancia_periodo:.2f} Bs")
-                    k2.metric("∑ TOTAL", f"{total_periodo:.2f} Bs")
-                    
-                    st.subheader("Detalle")
+                    st.success(f"Mostrando: **{inicio.strftime('%d/%m/%Y')}** al **{fin.strftime('%d/%m/%Y')}**")
+                else:
+                    df_filtrado = df_f; st.warning("Mostrando histórico total.")
+                
+                # 3. KPIs
+                ganancia_periodo = df_filtrado['Ganancia'].sum()
+                efectivo_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
+                banco_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
+                total_periodo = df_filtrado['Monto'].sum()
+
+                st.subheader("Resultados del Periodo")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("💰 GANANCIA", f"{ganancia_periodo:.2f} Bs")
+                k2.metric("💵 EFECTIVO", f"{efectivo_periodo:.2f} Bs")
+                k3.metric("📱 BANCO/QR", f"{banco_periodo:.2f} Bs")
+                k4.metric("∑ TOTAL", f"{total_periodo:.2f} Bs", border=True)
+                st.divider()
+
+                # 4. TABLA Y DESCARGAS
+                c_table, c_export = st.columns([3, 1])
+                with c_table:
+                    st.subheader("📒 Detalle")
                     df_editor = st.data_editor(df_filtrado, num_rows="dynamic", use_container_width=True, key="fin_ed_final", column_config={"Fecha_dt": None})
+                
+                with c_export:
+                    st.subheader("📂 Descargas")
+                    df_dl = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
+                    csv_filtrado = df_dl.to_csv(index=False, sep=';').encode('utf-8-sig')
+                    st.download_button("📥 Descargar Reporte", data=csv_filtrado, file_name="Reporte.csv", mime='text/csv', type="primary", key="btn_dl_1")
+                    st.caption("Seguridad:")
+                    csv_total = df_f.drop(columns=['Fecha_dt'], errors='ignore').to_csv(index=False, sep=';').encode('utf-8-sig')
+                    st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
+
+                # 5. GUARDAR CAMBIOS (CON BORRADO INTELIGENTE)
+                if st.button("💾 Guardar Cambios Tabla", key="btn_save_fin_final"):
+                    indices_originales = df_filtrado.index
+                    st.session_state['finanzas'] = st.session_state['finanzas'].drop(indices_originales)
+                    to_add = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
+                    st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], to_add]).sort_index()
+                    backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
+                    st.success("Base de datos actualizada."); time.sleep(1.5); st.rerun()
+
+                st.divider()
+                
+                # 6. REGISTRO MANUAL ADMIN
+                with st.container(border=True):
+                    st.subheader("📝 Registrar Gasto/Ingreso Admin")
+                    c1, c2 = st.columns(2)
+                    desc = c1.text_input("Descripción", key="input_desc_admin_final") 
+                    mont = c2.number_input("Monto", 0.0, key="input_monto_admin_final")
+                    tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin_final")
                     
-                    if st.button("💾 Guardar Cambios Finanzas", key="btn_save_fin_final"):
-                        idx = df_filtrado.index
-                        st.session_state['finanzas'] = st.session_state['finanzas'].drop(idx)
-                        to_add = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
-                        st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], to_add]).sort_index()
+                    if st.button("Registrar Movimiento", key="btn_reg_admin_final") and mont > 0:
+                        s = -1 if tipo == "Egreso" else 1
+                        n = pd.DataFrame([{
+                            'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': tipo, 
+                            'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': 0,
+                            'Usuario': user_id, 'Sucursal': sucursal_actual
+                        }])
+                        st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                         backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
-                        st.success("Guardado"); time.sleep(1.5); st.rerun()
+                        st.success("Registrado"); time.sleep(1); st.rerun()
             else:
                 st.info("Sin datos.")
 
-        # 2. USUARIOS (NUEVO)
+        # --- 2. USUARIOS ---
         with g_tab2:
             st.subheader("Gestión de Equipo")
-            
             with st.expander("➕ Crear Nuevo Usuario"):
                 with st.form("new_user"):
                     u_user = st.text_input("Usuario (Login)")
@@ -358,20 +392,14 @@ if rol_actual == "Admin":
                     u_suc = st.text_input("Sucursal", value="Matriz")
                     if st.form_submit_button("Crear Usuario"):
                         if u_user and u_pass:
-                            new_u = pd.DataFrame([{
-                                'Usuario': u_user, 'Password': u_pass, 'Nombre': u_name, 
-                                'Rol': u_rol, 'Sucursal': u_suc, 'Activo': 'TRUE'
-                            }])
+                            new_u = pd.DataFrame([{'Usuario': u_user, 'Password': u_pass, 'Nombre': u_name, 'Rol': u_rol, 'Sucursal': u_suc, 'Activo': 'TRUE'}])
                             st.session_state['usuarios'] = pd.concat([st.session_state['usuarios'], new_u], ignore_index=True)
                             backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
                             st.success("Usuario Creado"); time.sleep(1); st.rerun()
-                        else:
-                            st.error("Faltan datos")
-            
+                        else: st.error("Faltan datos")
             st.divider()
-            st.write("Editar Usuarios existentes (Marca 'FALSE' en Activo para despedir):")
+            st.write("Editar Usuarios:")
             df_users_ed = st.data_editor(st.session_state['usuarios'], num_rows="dynamic", use_container_width=True, key="users_editor")
-            
             if st.button("💾 Guardar Usuarios", key="btn_save_users"):
                 st.session_state['usuarios'] = df_users_ed
                 backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
