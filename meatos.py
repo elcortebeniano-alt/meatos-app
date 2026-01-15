@@ -104,7 +104,7 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v5.1 | Full Admin")
+    st.caption("MeatOS v5.2 | Excel Fix")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -293,7 +293,7 @@ if rol_actual == "Admin":
         st.header("📊 Gerencia & Reportes")
         g_tab1, g_tab2 = st.tabs(["📈 FINANZAS", "👥 USUARIOS"])
         
-        # --- 1. FINANZAS (RESTAURADO COMPLETO) ---
+        # --- 1. FINANZAS ---
         with g_tab1:
             df_f = st.session_state['finanzas']
             if not df_f.empty and 'Ganancia' in df_f.columns:
@@ -342,13 +342,15 @@ if rol_actual == "Admin":
                 with c_export:
                     st.subheader("📂 Descargas")
                     df_dl = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
-                    csv_filtrado = df_dl.to_csv(index=False, sep=';').encode('utf-8-sig')
+                    # AQUÍ ESTÁ EL ARREGLO DEL DECIMAL (Coma para Excel)
+                    csv_filtrado = df_dl.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📥 Descargar Reporte", data=csv_filtrado, file_name="Reporte.csv", mime='text/csv', type="primary", key="btn_dl_1")
+                    
                     st.caption("Seguridad:")
-                    csv_total = df_f.drop(columns=['Fecha_dt'], errors='ignore').to_csv(index=False, sep=';').encode('utf-8-sig')
+                    csv_total = df_f.drop(columns=['Fecha_dt'], errors='ignore').to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
 
-                # 5. GUARDAR CAMBIOS (CON BORRADO INTELIGENTE)
+                # 5. GUARDAR CAMBIOS
                 if st.button("💾 Guardar Cambios Tabla", key="btn_save_fin_final"):
                     indices_originales = df_filtrado.index
                     st.session_state['finanzas'] = st.session_state['finanzas'].drop(indices_originales)
