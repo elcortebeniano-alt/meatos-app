@@ -16,11 +16,25 @@ styles.cargar_css()
 def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 def get_bolivia_date(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d")
 
+# --- FUNCIÓN TURBO: CACHE DE IMÁGENES ---
+# Esta función escanea el disco UNA VEZ y recuerda qué fotos existen.
+@st.cache_data
+def obtener_mapa_imagenes(lista_productos):
+    mapa = {}
+    for prod in lista_productos:
+        path_png = f"img/{prod}.png"
+        path_jpg = f"img/{prod}.jpg"
+        if os.path.exists(path_png): mapa[prod] = path_png
+        elif os.path.exists(path_jpg): mapa[prod] = path_jpg
+        else: mapa[prod] = None # No tiene foto
+    return mapa
+
 # 2. CONEXIÓN
 if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.conectar_google_sheets()
 sheet = st.session_state['sheet_obj']
 
 if sheet:
+    # Carga de datos optimizada
     if 'finanzas' not in st.session_state: st.session_state['finanzas'] = backend.cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago', 'Ganancia', 'Usuario', 'Sucursal'])
     if 'productos' not in st.session_state: st.session_state['productos'] = backend.cargar_data(sheet, "productos", ['Producto', 'Costo', 'PrecioVenta', 'Categoria', 'StockActual'])
     if 'detalles' not in st.session_state: st.session_state['detalles'] = backend.cargar_data(sheet, "detalles", ['Fecha', 'Producto', 'Categoria', 'PesoKg', 'CostoUnit', 'PrecioVentaUnit', 'Subtotal', 'Ganancia', 'Usuario', 'Sucursal'])
@@ -35,6 +49,13 @@ if 'ultimo_ticket' not in st.session_state: st.session_state['ultimo_ticket'] = 
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
 if 'user_info' not in st.session_state: st.session_state['user_info'] = None
 if 'producto_seleccionado' not in st.session_state: st.session_state['producto_seleccionado'] = None 
+
+# PRE-CALCULO DE IMAGENES (AQUI ESTA LA MAGIA DE VELOCIDAD)
+# Solo se ejecuta si cambia la lista de productos
+if not st.session_state['productos'].empty:
+    mapa_imgs = obtener_mapa_imagenes(st.session_state['productos']['Producto'].unique())
+else:
+    mapa_imgs = {}
 
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
@@ -85,7 +106,7 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v7.1 | Fix Admin")
+    st.caption("MeatOS v7.2 | Turbo Cache")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -93,17 +114,15 @@ else:
     tab1, = st.tabs(["🛒 PUNTO DE VENTA"])
 
 # ==============================================================================
-# PESTAÑA 1: VENTA (VISUAL)
+# PESTAÑA 1: VENTA (VISUAL TURBO)
 # ==============================================================================
 with tab1:
-    # --- CAJA CHICA (Compacta) ---
     with st.expander("💸 Caja Chica / Gastos Menores"):
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         motivo = c1.selectbox("Motivo", ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"], label_visibility="collapsed")
         detalle = motivo if motivo != "Otro" else c1.text_input("Detalle:")
         monto = c2.number_input("Monto Bs", 0.0, step=1.0)
         tipo = c3.radio("Tipo", ["Salida", "Entrada"], horizontal=True, label_visibility="collapsed")
-        # FIX: AGREGADO KEY UNICA
         if c4.button("Registrar", key="btn_caja_chica"):
             if monto > 0:
                 signo = -1 if "Salida" in tipo else 1
@@ -129,18 +148,19 @@ with tab1:
             for i, cat in enumerate(categorias):
                 with tabs_cat[i]:
                     prods_cat = df_prod[df_prod['Categoria'] == cat]
+                    # Grid 3 columnas
                     cols = st.columns(3)
                     for idx, (index, row) in enumerate(prods_cat.iterrows()):
                         with cols[idx % 3]:
-                            img_path = f"img/{row['Producto']}.png"
-                            img_jpg = f"img/{row['Producto']}.jpg"
+                            nombre_prod = row['Producto']
+                            # USA EL MAPA DE CACHE, NO VUELVE A LEER DISCO
+                            img_path = mapa_imgs.get(nombre_prod)
                             
-                            if os.path.exists(img_path): st.image(img_path, use_container_width=True)
-                            elif os.path.exists(img_jpg): st.image(img_jpg, use_container_width=True)
+                            if img_path: st.image(img_path, use_container_width=True)
                             else: st.markdown(f"<div style='text-align:center;font-size:40px;background:#f0f2f6;border-radius:10px;padding:10px;'>🥩</div>", unsafe_allow_html=True)
                             
-                            if st.button(f"{row['Producto']}\n{float(row['PrecioVenta']):.2f} Bs", key=f"btn_prod_{index}", use_container_width=True):
-                                st.session_state['producto_seleccionado'] = row['Producto']
+                            if st.button(f"{nombre_prod}\n{float(row['PrecioVenta']):.2f} Bs", key=f"btn_prod_{index}", use_container_width=True):
+                                st.session_state['producto_seleccionado'] = nombre_prod
                                 st.rerun()
                             st.markdown("<br>", unsafe_allow_html=True)
         else:
