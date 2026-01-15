@@ -19,16 +19,19 @@ import backend
 st.set_page_config(page_title="El Corte Beniano | POS", layout="wide", page_icon="🥩", initial_sidebar_state="collapsed")
 styles.cargar_css()
 
-# --- CONFIGURACIÓN API GEMINI (CON DETECTIVE) ---
-api_key_status = "Desconocido"
+# --- DIAGNÓSTICO DE VERSIÓN ---
+try:
+    lib_version = genai.__version__
+except:
+    lib_version = "Desconocida"
+
+# --- CONFIGURACIÓN API ---
+api_status = "🔴"
 if "GOOGLE_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        api_key_status = "Configurada ✅"
-    except Exception as e:
-        api_key_status = f"Error Config: {e}"
-else:
-    api_key_status = "⚠️ NO ENCONTRADA en Secrets"
+        api_status = "🟢"
+    except: api_status = "ERR"
 
 def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 
@@ -36,13 +39,53 @@ def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime
 def obtener_mapa_imagenes(lista_productos):
     mapa = {}
     for prod in lista_productos:
-        p1 = f"img/{prod}.png"; p2 = f"img/{prod}.jpg"
+        p1, p2 = f"img/{prod}.png", f"img/{prod}.jpg"
         if os.path.exists(p1): mapa[prod] = p1
         elif os.path.exists(p2): mapa[prod] = p2
         else: mapa[prod] = None 
     return mapa
 
-# --- LECTOR QR ---
+# --- CEREBRO IA (SÚPER ROBUSTO) ---
+def analizar_recibo_con_ia(image_file):
+    img = Image.open(image_file)
+    prompt = """
+    Analiza este recibo de venta de carne.
+    Responde SOLAMENTE con un JSON válido (sin markdown, sin ```json).
+    Estructura:
+    {
+        "items": [
+            {"producto": "Nombre corte", "peso_kg": 0.0, "precio_unitario": 0.0, "subtotal": 0.0}
+        ],
+        "total_pagado": 0.0,
+        "metodo_pago": "Efectivo"
+    }
+    """
+    
+    # LISTA DE MODELOS A INTENTAR (Del más nuevo al más viejo)
+    # gemini-1.5-flash: El más rápido
+    # gemini-1.5-pro: El más inteligente
+    # gemini-pro-vision: El "viejo confiable" (compatibilidad alta)
+    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+    
+    log_errores = []
+
+    for nombre_modelo in modelos:
+        try:
+            model = genai.GenerativeModel(nombre_modelo)
+            response = model.generate_content([prompt, img])
+            # Limpieza agresiva de respuesta
+            texto = response.text
+            texto = texto.replace("```json", "").replace("```", "").replace("JSON", "").strip()
+            return json.loads(texto)
+        except Exception as e:
+            log_errores.append(f"{nombre_modelo}: {str(e)}")
+            continue # Intenta el siguiente
+            
+    # Si llega aquí, fallaron todos
+    st.error(f"❌ Fallaron todos los modelos. Detalles: {log_errores}")
+    return None
+
+# --- LECTOR QR Y PROCESAMIENTO ---
 def leer_qr_desde_imagen(image_file):
     try:
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
@@ -71,37 +114,11 @@ def procesar_codigo_qr(data_qr):
         return "❌ Formato inválido"
     except: return "❌ Error"
 
-# --- CEREBRO IA (CON REPORTE DE ERRORES REAL) ---
-def analizar_recibo_con_ia(image_file):
-    img = Image.open(image_file)
-    prompt = """
-    Extrae items, total y metodo_pago en JSON:
-    {"items":[{"producto":"", "peso_kg":0.0, "precio_unitario":0.0, "subtotal":0.0}], "total_pagado":0.0, "metodo_pago":"Efectivo"}
-    Solo JSON.
-    """
-    
-    # Intentamos primero con FLASH (más rápido)
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content([prompt, img])
-        return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-    except Exception as e_flash:
-        st.warning(f"Flash falló: {e_flash}. Intentando con Pro...")
-        # Si falla, intentamos con PRO
-        try:
-            model = genai.GenerativeModel('gemini-1.5-pro')
-            response = model.generate_content([prompt, img])
-            return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-        except Exception as e_pro:
-            st.error(f"❌ ERROR CRÍTICO IA: {e_pro}")
-            return None
-
-# CONEXION
+# 2. CONEXIÓN
 if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.conectar_google_sheets()
 sheet = st.session_state['sheet_obj']
 if not sheet: st.stop()
 
-# CARGA DATOS
 for k, cols in {'finanzas':['Fecha','Detalle','Tipo','Monto','MetodoPago','Ganancia','Usuario','Sucursal'], 
                 'productos':['Producto','Costo','PrecioVenta','Categoria','StockActual'], 
                 'detalles':['Fecha','Producto','Categoria','PesoKg','CostoUnit','PrecioVentaUnit','Subtotal','Ganancia','Usuario','Sucursal'],
@@ -109,7 +126,6 @@ for k, cols in {'finanzas':['Fecha','Detalle','Tipo','Monto','MetodoPago','Ganan
                 'clientes':['Telefono','Nombre','TotalGastado','UltimaCompra','Puntos']}.items():
     if k not in st.session_state: st.session_state[k] = backend.cargar_data(sheet, k, cols)
 
-# VARS
 for k in ['carrito','ultimo_ticket','user_info','producto_seleccionado','datos_ia_pendientes','msg_feedback']:
     if k not in st.session_state: st.session_state[k] = None
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
@@ -121,6 +137,9 @@ else: mapa_imgs = {}
 
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
+
+DIRECCION_NEGOCIO = "Calle A. García #1128, Cochabamba"
+TELEFONO_NEGOCIO = "591 77420111"
 
 # LOGIN
 if st.session_state['user_info'] is None:
@@ -145,8 +164,13 @@ user = st.session_state['user_info']
 with st.sidebar:
     if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", use_container_width=True)
     st.caption(f"👤 {user['Nombre']} | {user['Rol']}")
-    # --- DIAGNOSTICO ESTADO LLAVE ---
-    st.info(f"🔑 API Key: {api_key_status}")
+    
+    # --- CHIVATO DE VERSIÓN ---
+    st.markdown("---")
+    st.caption(f"🤖 IA Lib: v{lib_version}")
+    st.caption(f"🔑 Key: {api_status}")
+    st.markdown("---")
+    
     modo_movil = st.toggle("📱 Modo Celular", False)
     if st.button("🔒 Salir"): st.session_state['user_info'] = None; st.rerun()
 
@@ -160,9 +184,9 @@ with tabs[1]:
     if up:
         st.image(up, width=300)
         if st.button("✨ ANALIZAR", type="primary"):
-            with st.spinner("🤖 Consultando a Gemini..."):
+            with st.spinner("🤖 Leyendo..."):
                 d = analizar_recibo_con_ia(up)
-                if d: st.session_state['datos_ia_pendientes'] = d; st.success("Leído")
+                if d: st.session_state['datos_ia_pendientes'] = d; st.success("¡Leído!")
         
         if st.session_state['datos_ia_pendientes']:
             datos = st.session_state['datos_ia_pendientes']
@@ -186,19 +210,14 @@ with tabs[1]:
                     det_bd.append({'Fecha': now, 'Producto': r['producto'], 'Categoria': cat, 'PesoKg': r['peso_kg'], 'CostoUnit': cost, 'PrecioVentaUnit': r['precio_unitario'], 'Subtotal': r['subtotal'], 'Ganancia': g, 'Usuario': f"{user['Usuario']} (Kyte)", 'Sucursal': user['Sucursal']})
 
                 backend.guardar_data(sheet, "productos", st.session_state['productos'])
-                if det_bd: 
-                    st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(det_bd)], ignore_index=True)
-                    backend.guardar_data(sheet, "detalles", st.session_state['detalles'])
-                
+                if det_bd: st.session_state['detalles'] = pd.concat([st.session_state['detalles'], pd.DataFrame(det_bd)], ignore_index=True); backend.guardar_data(sheet, "detalles", st.session_state['detalles'])
                 fin = pd.DataFrame([{'Fecha': now, 'Detalle': f"Venta Kyte {rid}", 'Tipo': "Ingreso", 'Monto': float(datos['total_pagado']), 'MetodoPago': met, 'Ganancia': tot_g, 'Usuario': user['Usuario'], 'Sucursal': user['Sucursal']}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], fin], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Guardado!"); st.session_state['datos_ia_pendientes'] = None; time.sleep(2); st.rerun()
 
-# --- TAB VENTA (RESUMIDO PARA ESPACIO - MANTIENE LOGICA V9.2) ---
+# --- TAB VENTA ---
 with tabs[0]:
-    # ... (El código de venta manual es idéntico al anterior, mantenlo igual) ...
-    # ZONA ESCANEO
     with st.container(border=True):
         st.caption("📷 ESCANEAR")
         pistola = st.text_input("Pistola:", key="pist")
@@ -208,32 +227,53 @@ with tabs[0]:
             if "✅" in res: st.success(res); time.sleep(1); st.rerun()
             else: st.error(res)
     
-    # LAYOUT VENTA MANUAL... (Pega aquí tu código de venta manual v9.2 que ya funcionaba)
-    # ... (Para ahorrar espacio aquí, asumo que mantienes esa parte intacta)
-    # SI NECESITAS QUE TE LA PEGUE COMPLETA OTRA VEZ, DIMELO.
-    
-    # Rellenar con lógica básica para que funcione el ejemplo si copias y pegas solo esto:
+    # LAYOUT MANUAL
     if modo_movil: l_tabs = st.tabs(["CATALOGO", "CARRITO"]); cont_cat = l_tabs[0]; cont_op = l_tabs[1]
     else: c1, c2 = st.columns([1.6, 1.4]); cont_cat = c1; cont_op = c2
     
     with cont_cat:
-        df = st.session_state['productos']
-        if not df.empty:
-            for i, r in df.iterrows():
-                if st.button(f"{r['Producto']} - {r['PrecioVenta']}", key=f"p_{i}"): st.session_state['producto_seleccionado'] = r['Producto']; st.rerun()
+        df_prod = st.session_state['productos']
+        if not df_prod.empty:
+            cats = sorted(df_prod[df_prod['Categoria']!=""]['Categoria'].unique())
+            tabs_c = st.tabs(cats)
+            for i, c in enumerate(cats):
+                with tabs_c[i]:
+                    cols = st.columns(2 if modo_movil else 3)
+                    for ix, (idx, r) in enumerate(df_prod[df_prod['Categoria']==c].iterrows()):
+                        with cols[ix % (2 if modo_movil else 3)]:
+                            im = mapa_imgs.get(r['Producto'])
+                            if im: st.image(im, use_container_width=True)
+                            else: st.markdown("<div style='text-align:center;'>🥩</div>", unsafe_allow_html=True)
+                            if st.button(f"{r['Producto']}\n{r['PrecioVenta']}", key=f"b_{idx}"): st.session_state['producto_seleccionado'] = r['Producto']; st.rerun()
 
     with cont_op:
         if st.session_state['producto_seleccionado']:
-            st.info(f"Sel: {st.session_state['producto_seleccionado']}")
-            # Lógica básica de peso...
-            peso = st.number_input("Peso", 0.0, step=0.1)
-            if st.button("Agregar"): st.session_state['carrito'].append({"Producto":st.session_state['producto_seleccionado'], "Cantidad": peso, "Subtotal": peso*10}); st.rerun()
+            dat = st.session_state['productos'][st.session_state['productos']['Producto'] == st.session_state['producto_seleccionado']].iloc[0]
+            st.info(f"Sel: {dat['Producto']}")
+            mod = st.radio("Modo", ["Peso", "Und"], horizontal=True)
+            cant = st.number_input("Cant/Gr", 0.0)
+            cant_f = cant/1000 if mod=="Peso" else cant
+            if st.button("Agregar"): 
+                st.session_state['carrito'].append({"Producto":dat['Producto'], "Cantidad":cant_f, "PrecioUnit":float(dat['PrecioVenta']), "Subtotal":cant_f*float(dat['PrecioVenta']), "CostoUnit": float(dat.get('Costo',0)), "Categoria":str(dat.get('Categoria','Gen'))})
+                st.session_state['producto_seleccionado']=None; st.rerun()
+            if st.button("Cancelar"): st.session_state['producto_seleccionado']=None; st.rerun()
         
         if st.session_state['carrito']:
             st.dataframe(pd.DataFrame(st.session_state['carrito']))
-            if st.button("Cobrar"): st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
+            if st.button("Cobrar"): 
+                # (Logica cobro simplificada - se mantiene la tuya full en tu version completa)
+                st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
 
-# --- TAB INV/GERENCIA (Igual v9.2) ---
+# --- ADMIN ---
 if user['Rol'] == "Admin":
-    with tabs[2]: st.data_editor(st.session_state['productos'], key="ie")
-    with tabs[3]: st.dataframe(st.session_state['finanzas'])
+    with tabs[2]: st.data_editor(st.session_state['productos'], key="inv")
+    with tabs[3]: 
+        st.dataframe(st.session_state['finanzas'])
+        # ETIQUETADORA
+        pe = st.selectbox("P:", st.session_state['productos']['Producto'].unique())
+        pes = st.number_input("Kg:", 0.0)
+        if pe and pes:
+            im = Image.new('RGB', (500,300), 'white'); d = ImageDraw.Draw(im)
+            im.paste(qrcode.make(f"MeatOS|{pe}|{pes}").resize((200,200)), (10,50))
+            d.text((220,50), "EL CORTE", fill=0); d.text((220,100), f"{pe}\n{pes}kg", fill=0)
+            st.image(im, width=250)
