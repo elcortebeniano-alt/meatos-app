@@ -32,10 +32,10 @@ def cargar_data(sheet, nombre_hoja, columnas):
         data = worksheet.get_all_records()
         if not data: return pd.DataFrame(columns=columnas)
         df = pd.DataFrame(data)
-        # Asegurar columnas
+        # Convertir todo a string para evitar problemas de tipos
         for col in columnas:
-            if col not in df.columns: df[col] = "" 
-        return df
+            if col not in df.columns: df[col] = ""
+        return df.astype(str)
     except gspread.WorksheetNotFound:
         worksheet = sheet.add_worksheet(title=nombre_hoja, rows=1000, cols=10)
         worksheet.append_row(columnas)
@@ -47,13 +47,10 @@ def cargar_data(sheet, nombre_hoja, columnas):
 def guardar_data(sheet, nombre_hoja, df):
     try:
         worksheet = sheet.worksheet(nombre_hoja)
-        # 1. Copia de seguridad
         df_save = df.copy()
-        
-        # 2. Eliminar columnas auxiliares visuales
         if 'Fecha_dt' in df_save.columns: df_save = df_save.drop(columns=['Fecha_dt'])
         
-        # 3. Limpieza de datos (NaT a vacío) para evitar error JSON
+        # Limpieza total para JSON
         df_save = df_save.astype(str) 
         df_save = df_save.replace("NaT", "").replace("nan", "").replace("<NA>", "")
         
@@ -75,12 +72,14 @@ def get_image_base64(path):
     except:
         return ""
 
-# --- TICKET CON VENDEDOR (ESTA ES LA FUNCIÓN QUE FALTABA ACTUALIZAR) ---
-# Fíjate que ahora recibe "vendedor" al final
-def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono, vendedor):
+# --- TICKET ACTUALIZADO CON CLIENTE ---
+def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono, vendedor, cliente_nombre=""):
     
     logo_b64 = get_image_base64("Logo-Final.png")
     img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 50px; height: auto;">' if logo_b64 else ""
+
+    # Si hay cliente, mostramos su nombre
+    cliente_html = f'<p style="margin:1px 0;">Cliente: {cliente_nombre}</p>' if cliente_nombre else ""
 
     items_html = ""
     for item in carrito:
@@ -138,6 +137,7 @@ def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, tel
             </div>
             <div class="footer">
                 <p style="margin:0; font-weight:bold;">¡Gracias por su compra!</p>
+                {cliente_html}
                 <p style="margin:1px 0;">Le atendió: {vendedor}</p>
                 <p style="margin:2px 0;">{fecha}</p>
             </div>
