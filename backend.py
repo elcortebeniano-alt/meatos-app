@@ -32,7 +32,7 @@ def cargar_data(sheet, nombre_hoja, columnas):
         data = worksheet.get_all_records()
         if not data: return pd.DataFrame(columns=columnas)
         df = pd.DataFrame(data)
-        # Asegurar que existan todas las columnas
+        # Asegurar columnas
         for col in columnas:
             if col not in df.columns: df[col] = "" 
         return df
@@ -44,31 +44,18 @@ def cargar_data(sheet, nombre_hoja, columnas):
         st.error(f"Error leyendo {nombre_hoja}: {e}")
         return pd.DataFrame(columns=columnas)
 
-# --- FUNCIÓN DE GUARDADO BLINDADA (AQUÍ ESTÁ LA SOLUCIÓN) ---
 def guardar_data(sheet, nombre_hoja, df):
     try:
         worksheet = sheet.worksheet(nombre_hoja)
-        
-        # 1. Crear una copia para no dañar lo que ves en pantalla
         df_save = df.copy()
+        if 'Fecha_dt' in df_save.columns: df_save = df_save.drop(columns=['Fecha_dt'])
         
-        # 2. ELIMINAR COLUMNAS AUXILIARES (Como Fecha_dt que causa problemas)
-        if 'Fecha_dt' in df_save.columns:
-            df_save = df_save.drop(columns=['Fecha_dt'])
-            
-        # 3. LIMPIEZA PROFUNDA DE FECHAS Y VACÍOS (El arreglo del NaT)
-        # Convertimos todo a string para que JSON no se queje
+        # Limpieza para JSON
         df_save = df_save.astype(str) 
+        df_save = df_save.replace("NaT", "").replace("nan", "").replace("<NA>", "")
         
-        # Reemplazamos los códigos de error típicos de Pandas por texto vacío
-        df_save = df_save.replace("NaT", "")
-        df_save = df_save.replace("nan", "")
-        df_save = df_save.replace("<NA>", "")
-        
-        # 4. Guardar
         worksheet.clear()
         worksheet.update([df_save.columns.values.tolist()] + df_save.values.tolist())
-        
     except Exception as e:
         st.error(f"Error guardando {nombre_hoja}: {e}")
 
@@ -85,8 +72,8 @@ def get_image_base64(path):
     except:
         return ""
 
-# --- GENERADOR DE TICKET ---
-def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono):
+# --- TICKET CON VENDEDOR ---
+def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, telefono, vendedor):
     
     logo_b64 = get_image_base64("Logo-Final.png")
     img_tag = f'<img src="{logo_b64}" alt="Logo" style="width: 50px; height: auto;">' if logo_b64 else ""
@@ -110,11 +97,7 @@ def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, tel
         <meta charset="UTF-8">
         <style>
             @page {{ margin: 0; size: 58mm auto; }}
-            body {{
-                font-family: 'Helvetica', 'Arial', sans-serif;
-                margin: 0; padding: 0; background-color: #fff;
-                display: flex; flex-direction: column; align-items: center; width: 100%;
-            }}
+            body {{ font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 0; background-color: #fff; display: flex; flex-direction: column; align-items: center; width: 100%; }}
             .ticket-body {{ width: 48mm; padding: 2px; box-sizing: border-box; }}
             .header-container {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }}
             .logo-box {{ flex: 0 0 50px; }}
@@ -151,6 +134,7 @@ def generar_html_ticket(carrito, total, fecha, metodo, recibo_id, direccion, tel
             </div>
             <div class="footer">
                 <p style="margin:0; font-weight:bold;">¡Gracias por su compra!</p>
+                <p style="margin:1px 0;">Le atendió: {vendedor}</p>
                 <p style="margin:2px 0;">{fecha}</p>
             </div>
         </div>
