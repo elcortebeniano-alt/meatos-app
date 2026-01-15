@@ -33,10 +33,6 @@ if 'carrito' not in st.session_state: st.session_state['carrito'] = []
 if 'ultimo_ticket' not in st.session_state: st.session_state['ultimo_ticket'] = None 
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
 if 'user_info' not in st.session_state: st.session_state['user_info'] = None
-# Variables para Cierre Ciego
-if 'arqueo_contado_efectivo' not in st.session_state: st.session_state['arqueo_contado_efectivo'] = 0.0
-if 'arqueo_contado_qr' not in st.session_state: st.session_state['arqueo_contado_qr'] = 0.0
-if 'arqueo_realizado' not in st.session_state: st.session_state['arqueo_realizado'] = False
 
 st.session_state['finanzas'] = backend.limpiar_fechas(st.session_state['finanzas'])
 st.session_state['detalles'] = backend.limpiar_fechas(st.session_state['detalles'])
@@ -85,10 +81,9 @@ with st.sidebar:
     st.caption(f"🏷️ {rol_actual} | 📍 {sucursal_actual}")
     if st.button("🔒 Cerrar Sesión", type="primary"): 
         st.session_state['user_info'] = None
-        st.session_state['arqueo_realizado'] = False # Reset arqueo
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v6.0 | Security & Finance")
+    st.caption("MeatOS v6.1 | Treasury Fix")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -111,8 +106,6 @@ with tab1:
             if monto > 0:
                 signo = -1 if "Salida" in tipo else 1
                 tipo_bd = "Egreso" if "Salida" in tipo else "Ingreso"
-                # OJO: Los gastos de caja chica NO afectan Ganancia Neta por defecto, a menos que el Admin decida. 
-                # Por ahora lo dejamos en 0 ganancia para no confundir caja chica con gastos operativos grandes.
                 nuevo = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[CAJA] {detalle}", 'Tipo': tipo_bd, 'Monto': monto * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
                 st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], nuevo], ignore_index=True)
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
@@ -218,7 +211,7 @@ with tab1:
                     else: 
                         if pago > 0: st.error(f"Falta: {total_a_pagar-pago:.2f}"); cobrar = False
                         else: st.warning("Ingrese monto"); cobrar = False
-            else: st.success("✨ ¡Pago cubierto con puntos!")
+            else: st.success("✨ ¡Pago cubierto totalmente con puntos!")
             
             b1, b2 = st.columns([1, 2])
             if b1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
@@ -255,7 +248,6 @@ with tab1:
                     df_cli = st.session_state['clientes']
                     df_cli['Telefono'] = df_cli['Telefono'].astype(str)
                     puntos_ganados = int(total_a_pagar * 0.01) if acumular_puntos else 0
-                    
                     if cliente_existente:
                         idx_cli = df_cli.index[df_cli['Telefono'] == cel].tolist()[0]
                         gasto_prev = float(df_cli.at[idx_cli, 'TotalGastado']) if df_cli.at[idx_cli, 'TotalGastado'] else 0.0
@@ -292,7 +284,7 @@ with tab1:
 
     st.divider()
     
-    # --- ARQUEO CIEGO & SEGURIDAD ---
+    # --- ARQUEO CIEGO & SEGURIDAD (CON PERSISTENCIA) ---
     st.subheader("🛡️ Cierre de Caja")
     hoy = get_bolivia_date()
     df_hoy = st.session_state['finanzas'][st.session_state['finanzas']['Fecha'].astype(str).str.startswith(hoy)]
@@ -300,58 +292,35 @@ with tab1:
     if not df_hoy.empty:
         df_hoy['Monto'] = pd.to_numeric(df_hoy['Monto'], errors='coerce').fillna(0.0)
         
-        # Totales REALES (Lo que el sistema sabe)
+        # Totales REALES
         v_qr_real = df_hoy[df_hoy['MetodoPago'].str.contains('QR', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
         v_efec_real = df_hoy[df_hoy['MetodoPago'].str.contains('Efectivo', na=False) & (df_hoy['Tipo'] == 'Ingreso')]['Monto'].sum()
         
-        # LOGICA CIEGA:
-        # Si es Vendedor -> Solo ve inputs para contar.
-        # Si es Admin -> Ve los totales reales Y la diferencia.
+        if rol_actual == "Vendedor":
+            # EL VENDEDOR SOLO VE INPUTS Y ENVIA
+            c1, c2, c3 = st.columns(3)
+            ar_efec = c1.number_input("Efectivo Contado:", 0.0, step=1.0)
+            ar_qr = c2.number_input("QR Verificado:", 0.0, step=1.0)
+            if c3.button("📩 ENVIAR REPORTE CIERRE", type="primary"):
+                # GUARDAR COMO FILA EN BD PARA QUE ADMIN LO VEA
+                rep = pd.DataFrame([{
+                    'Fecha': get_bolivia_time(),
+                    'Detalle': f"[REPORTE ARQUEO] Vendedor: {usuario_actual} | Efec: {ar_efec} | QR: {ar_qr}",
+                    'Tipo': "Reporte", 'Monto': 0, 'MetodoPago': "Info", 'Ganancia': 0,
+                    'Usuario': usuario_actual, 'Sucursal': sucursal_actual
+                }])
+                st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], rep], ignore_index=True)
+                backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
+                st.success("✅ Reporte enviado al Administrador.")
         
-        c_arq1, c_arq2, c_arq3 = st.columns(3)
-        
-        # Inputs para contar (Todos lo ven)
-        with c_arq1:
-            st.markdown("##### 💵 Efectivo Contado")
-            st.session_state['arqueo_contado_efectivo'] = st.number_input("Ingrese Efectivo en Caja:", 0.0, step=1.0, key="arq_efec_in")
-        
-        with c_arq2:
-            st.markdown("##### 📱 QR Verificado")
-            st.session_state['arqueo_contado_qr'] = st.number_input("Ingrese Total QR:", 0.0, step=1.0, key="arq_qr_in")
+        elif rol_actual == "Admin":
+            # EL ADMIN VE TODO
+            st.info("📊 Panel de Auditoría")
+            k1, k2 = st.columns(2)
+            k1.metric("Sistema (Efectivo)", f"{v_efec_real:.2f} Bs")
+            k2.metric("Sistema (QR)", f"{v_qr_real:.2f} Bs")
             
-        with c_arq3:
-            st.markdown("##### 🏁 Acción")
-            if st.button("Realizar Arqueo", type="primary"):
-                st.session_state['arqueo_realizado'] = True
-
-        st.divider()
-
-        # RESULTADOS DEL ARQUEO
-        if st.session_state['arqueo_realizado']:
-            dif_efec = st.session_state['arqueo_contado_efectivo'] - v_efec_real
-            dif_qr = st.session_state['arqueo_contado_qr'] - v_qr_real
-            
-            if rol_actual == "Admin":
-                # ADMIN VE TODO LA VERDAD
-                st.markdown("#### 🕵️‍♂️ Resultado de Auditoría (Solo Admin)")
-                k1, k2, k3 = st.columns(3)
-                k1.metric("Sistema Dice (Efectivo)", f"{v_efec_real:.2f} Bs")
-                k2.metric("Cajero Contó", f"{st.session_state['arqueo_contado_efectivo']:.2f} Bs")
-                k3.metric("Diferencia", f"{dif_efec:.2f} Bs", delta_color="normal" if dif_efec==0 else "inverse")
-                
-                k4, k5, k6 = st.columns(3)
-                k4.metric("Sistema Dice (QR)", f"{v_qr_real:.2f} Bs")
-                k5.metric("Cajero Contó", f"{st.session_state['arqueo_contado_qr']:.2f} Bs")
-                k6.metric("Diferencia", f"{dif_qr:.2f} Bs", delta_color="normal" if dif_qr==0 else "inverse")
-                
-                if dif_efec == 0 and dif_qr == 0:
-                    st.success("✅ ¡CAJA CUADRADA PERFECTAMENTE!")
-                else:
-                    st.error("⚠️ HAY DESCUADRES. REVISAR.")
-            
-            else:
-                # VENDEDOR SOLO VE CONFIRMACIÓN (No sabe si cuadró o no, evita robos "ajustados")
-                st.info("📨 Arqueo registrado. El administrador revisará los montos.")
+            st.caption("Busca en la tabla de abajo las filas '[REPORTE ARQUEO]' para ver lo que declararon los vendedores.")
 
 if rol_actual == "Admin":
     with tab2:
@@ -402,25 +371,30 @@ if rol_actual == "Admin":
                     st.success(f"Mostrando: **{inicio.strftime('%d/%m/%Y')}** al **{fin.strftime('%d/%m/%Y')}**")
                 else: df_filtrado = df_f; st.warning("Histórico Total")
                 
-                # --- CALCULO FINANCIERO REAL ---
-                # Ingresos Brutos (Ventas)
+                # CALCULOS REALES Y VISIBLES (TESORERIA + UTILIDAD)
                 ingresos = df_filtrado[df_filtrado['Tipo'] == 'Ingreso']['Monto'].sum()
-                
-                # Utilidad Bruta (Solo de ventas, Ganancia positiva)
                 utilidad_bruta = df_filtrado[df_filtrado['Ganancia'] > 0]['Ganancia'].sum()
-                
-                # Gastos Operativos (Donde Ganancia es negativa o Monto es Egreso administrativo)
-                # OJO: Aquí sumamos los Egresos Admin (Alquiler, Sueldos)
                 gastos_admin = df_filtrado[(df_filtrado['Tipo'] == 'Egreso') & (df_filtrado['Detalle'].str.contains('ADMIN', na=False))]['Monto'].sum()
-                # Nota: gastos_admin ya viene negativo (ej: -2000)
+                utilidad_neta = utilidad_bruta + gastos_admin
                 
-                utilidad_neta = utilidad_bruta + gastos_admin # (Bruta + (-Gastos))
+                # TESORERIA (SALDOS REALES)
+                saldo_efectivo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
+                saldo_qr = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
+
+                # KPI ROW 1: RENTABILIDAD
+                st.markdown("#### 📉 Rentabilidad (Ganancias)")
+                k1, k2, k3 = st.columns(3)
+                k1.metric("💰 UTILIDAD BRUTA", f"{utilidad_bruta:.2f} Bs")
+                k2.metric("📉 GASTOS FIJOS", f"{gastos_admin:.2f} Bs")
+                k3.metric("🏦 UTILIDAD NETA", f"{utilidad_neta:.2f} Bs", delta_color="normal")
                 
-                k1, k2, k3, k4 = st.columns(4)
-                k1.metric("💰 UTILIDAD BRUTA", f"{utilidad_bruta:.2f} Bs", help="Ganancia solo por venta de carne")
-                k2.metric("📉 GASTOS FIJOS", f"{gastos_admin:.2f} Bs", help="Alquiler, Luz, Sueldos (Registrados por Admin)")
-                k3.metric("🏦 UTILIDAD NETA", f"{utilidad_neta:.2f} Bs", help="Lo que realmente te queda en el bolsillo", delta_color="normal")
-                k4.metric("💵 FLUJO TOTAL", f"{ingresos:.2f} Bs", help="Dinero total que entró a caja")
+                # KPI ROW 2: TESORERIA (DONDE ESTA LA PLATA)
+                st.markdown("#### 💵 Tesorería (Flujo de Caja)")
+                t1, t2, t3 = st.columns(3)
+                t1.metric("💵 EN CAJA (Efectivo)", f"{saldo_efectivo:.2f} Bs")
+                t2.metric("📱 EN BANCO (QR)", f"{saldo_qr:.2f} Bs")
+                t3.metric("∑ TOTAL FLUJO", f"{ingresos:.2f} Bs")
+                
                 st.divider()
                 
                 c_tbl, c_dl = st.columns([3, 1])
@@ -438,23 +412,29 @@ if rol_actual == "Admin":
                     backend.guardar_data(sheet, "finanzas", st.session_state['finanzas']); st.success("Guardado"); time.sleep(1.5); st.rerun()
                 st.divider()
                 
-                # --- REGISTRO DE GASTOS OPERATIVOS ---
+                # --- REGISTRO DE GASTOS CON ORIGEN ---
                 with st.container(border=True):
-                    st.subheader("📝 Registrar Gasto Operativo / Movimiento")
-                    c1, c2 = st.columns(2); desc = c1.text_input("Descripción (Ej: Pago Luz)"); mont = c2.number_input("Monto", 0.0)
+                    st.subheader("📝 Registrar Gasto Operativo")
+                    c1, c2, c3 = st.columns(3)
+                    desc = c1.text_input("Descripción (Ej: Pago Luz)") 
+                    mont = c2.number_input("Monto", 0.0)
+                    origen = c3.selectbox("¿De dónde sale la plata?", ["💵 Efectivo (Caja)", "📱 Banco (QR)"])
+                    
                     tipo = st.radio("Tipo", ["Egreso (Gasto)", "Ingreso (Capital)"], horizontal=True)
+                    
                     if st.button("Registrar Movimiento") and mont > 0:
                         if "Egreso" in tipo:
                             s = -1 
-                            # Si es gasto, la ganancia se ve afectada negativamente (para que baje la utilidad neta)
                             ganancia_mov = -mont 
                         else:
                             s = 1
-                            ganancia_mov = 0 # Ingreso de capital no es ganancia operativa, es flujo
+                            ganancia_mov = 0 
+                        
+                        metodo_reg = "Efectivo" if "Efectivo" in origen else "QR"
                             
                         n = pd.DataFrame([{
                             'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {desc}", 'Tipo': "Egreso" if s==-1 else "Ingreso", 
-                            'Monto': mont*s, 'MetodoPago': 'Otro', 'Ganancia': ganancia_mov, 
+                            'Monto': mont*s, 'MetodoPago': metodo_reg, 'Ganancia': ganancia_mov, 
                             'Usuario': user_id, 'Sucursal': sucursal_actual
                         }])
                         st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
