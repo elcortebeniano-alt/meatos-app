@@ -106,7 +106,7 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v8.0 | Mobile Ready")
+    st.caption("MeatOS v7.4 | Usability Pro")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -122,10 +122,10 @@ with tab1:
         c1, c2, c3, c4 = st.columns([2, 1.5, 1, 1])
         motivo = c1.selectbox("Motivo", ["Pago Delivery", "Hielo/Bolsas", "Apertura Caja", "Retiro Ganancias", "Otro"], label_visibility="collapsed")
         detalle = motivo if motivo != "Otro" else c1.text_input("Detalle:")
-        monto = c2.number_input("Monto Bs", 0.0, step=1.0)
+        monto = c2.number_input("Monto Bs", step=1.0, value=None, placeholder="0.0") # FIX: Value None
         tipo = c3.radio("Tipo", ["Salida", "Entrada"], horizontal=True, label_visibility="collapsed")
         if c4.button("Registrar", key="btn_caja_chica"):
-            if monto > 0:
+            if monto and monto > 0:
                 signo = -1 if "Salida" in tipo else 1
                 tipo_bd = "Egreso" if "Salida" in tipo else "Ingreso"
                 nuevo = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[CAJA] {detalle}", 'Tipo': tipo_bd, 'Monto': monto * signo, 'MetodoPago': 'Efectivo', 'Ganancia': 0, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
@@ -137,23 +137,18 @@ with tab1:
 
     # --- DEFINICIÓN DE LAYOUT SEGÚN MODO ---
     if modo_movil:
-        # MODO MOVIL: PESTAÑAS
         layout_venta = st.tabs(["🥩 1. ELEGIR PRODUCTOS", "🛒 2. VER CARRITO Y PAGAR"])
         contenedor_catalogo = layout_venta[0]
         contenedor_operacion = layout_venta[1]
     else:
-        # MODO PC: COLUMNAS
         col1, col2 = st.columns([1.6, 1.4], gap="medium")
         contenedor_catalogo = col1
         contenedor_operacion = col2
 
     # >>> CONTENEDOR 1: CATALOGO VISUAL <<<
     with contenedor_catalogo:
-        # SI HAY PRODUCTO SELECCIONADO EN MODO MOVIL, MOSTRAMOS EL FORMULARIO AQUI MISMO PARA NO CAMBIAR DE PESTAÑA
         if modo_movil and st.session_state['producto_seleccionado']:
             st.info(f"🔹 **{st.session_state['producto_seleccionado']}**")
-            # Logica de pesado (Reutilizada abajo, pero mostrada aqui para movil)
-            # Para evitar duplicar codigo visualmente complejo, usaremos una bandera
             mostrar_form_movil = True
         else:
             mostrar_form_movil = False
@@ -161,13 +156,25 @@ with tab1:
             df_prod = st.session_state['productos']
             
             if not df_prod.empty:
-                categorias = sorted(df_prod[df_prod['Categoria'] != ""]['Categoria'].unique())
+                # --- ORDENAMIENTO PERSONALIZADO ---
+                categorias_unicas = df_prod[df_prod['Categoria'] != ""]['Categoria'].unique()
+                
+                # Lista de prioridades (Res > Embutidos > Extras)
+                orden_prioridad = ["Res", "Embutidos", "Extras", "Pollo", "Cerdo", "Otros"]
+                
+                # Función para ordenar
+                def sort_key(cat):
+                    if cat in orden_prioridad: return orden_prioridad.index(cat)
+                    return 999 # Al final si no está en la lista
+                
+                categorias = sorted(categorias_unicas, key=sort_key)
+                
                 tabs_cat = st.tabs(categorias)
                 
                 for i, cat in enumerate(categorias):
                     with tabs_cat[i]:
                         prods_cat = df_prod[df_prod['Categoria'] == cat]
-                        cols_num = 2 if modo_movil else 3 # 2 columnas en movil, 3 en PC
+                        cols_num = 2 if modo_movil else 3 
                         cols = st.columns(cols_num)
                         for idx, (index, row) in enumerate(prods_cat.iterrows()):
                             with cols[idx % cols_num]:
@@ -184,9 +191,6 @@ with tab1:
                 st.warning("Sin productos.")
 
     # >>> CONTENEDOR 2: OPERACION (PESO + PAGO) <<<
-    # En movil, si hay seleccion, usamos el contenedor 1 (Catalogo) para mostrar el form y ocultar el resto
-    # En PC, usamos el contenedor 2 (Derecha)
-    
     target_container = contenedor_catalogo if (modo_movil and st.session_state['producto_seleccionado']) else contenedor_operacion
     
     with target_container:
@@ -210,13 +214,19 @@ with tab1:
             cantidad_final = 0.0
             if "Peso" in modo_venta:
                 if stock_actual <= 2.0: st.error(f"🚨 Crítico: {stock_actual:.3f} Kg")
-                gr = st.number_input("Gramos", min_value=0, step=10, key=f"peso_{st.session_state['reset_counter']}")
-                cantidad_final = gr / 1000
-                st.caption(f"= {cantidad_final:.3f} Kg")
+                else: st.success(f"✅ Stock: {stock_actual:.3f} Kg")
+                
+                # FIX: Input vacio para facil escritura
+                gr_input = st.number_input("⚖️ PESO (Gramos)", min_value=0, step=10, value=None, placeholder="0", key=f"peso_input_{st.session_state['reset_counter']}")
+                if gr_input:
+                    cantidad_final = gr_input / 1000
+                    st.caption(f"= {cantidad_final:.3f} Kg")
             else:
                 if stock_actual <= 5.0: st.warning(f"⚠️ Quedan {int(stock_actual)}")
-                unidades = st.number_input("Cantidad", min_value=0, step=1, key=f"und_{st.session_state['reset_counter']}")
-                cantidad_final = float(unidades)
+                # FIX: Input vacio
+                und_input = st.number_input("Cantidad", min_value=0, step=1, value=None, placeholder="0", key=f"und_{st.session_state['reset_counter']}")
+                if und_input:
+                    cantidad_final = float(und_input)
 
             if cantidad_final > 0:
                 st.markdown(f"### Total: {precio_final*cantidad_final:.2f} Bs")
@@ -236,8 +246,7 @@ with tab1:
                 st.session_state['producto_seleccionado'] = None; st.rerun()
             st.divider()
 
-        # 2. CARRITO (Solo se muestra en contenedor operacion si NO estamos en modo movil seleccionando producto)
-        # En modo movil, el carrito está en la pestaña 2 siempre.
+        # 2. CARRITO
         if not (modo_movil and st.session_state['producto_seleccionado']):
             st.subheader(f"🛒 Carrito ({len(st.session_state['carrito'])})")
             if st.session_state['carrito']:
@@ -283,12 +292,17 @@ with tab1:
                 qr_vuelto = False
                 
                 if total_neto > 0 and metodo == "Efectivo":
-                    recibido = st.number_input("Recibido", min_value=0.0, step=0.5)
-                    if recibido >= total_neto:
-                        cambio = recibido - total_neto
-                        st.info(f"Vuelto: {cambio:.2f}")
-                        if cambio > 0: qr_vuelto = st.checkbox("Vuelto QR")
-                    else: st.warning("Falta"); cobrar = False
+                    # FIX: Input vacio para efectivo
+                    recibido_input = st.number_input("Recibido", min_value=0.0, step=0.5, value=None, placeholder="0.0")
+                    if recibido_input:
+                        recibido = float(recibido_input)
+                        if recibido >= total_neto:
+                            cambio = recibido - total_neto
+                            st.info(f"Vuelto: {cambio:.2f}")
+                            if cambio > 0: qr_vuelto = st.checkbox("Vuelto QR")
+                        else: st.warning("Falta"); cobrar = False
+                    else:
+                        cobrar = False # No ha puesto monto aun
                 
                 c_btn1, c_btn2 = st.columns([1, 2])
                 if c_btn1.button("🗑️"): st.session_state['carrito'] = []; st.rerun()
@@ -350,7 +364,7 @@ with tab1:
         components.html(st.session_state['ultimo_ticket']['html_raw'], height=450, scrolling=True)
 
 # ==============================================================================
-# SECCIONES ADMIN (INVENTARIO Y GERENCIA - MANTENIDAS v6.1)
+# SECCIONES ADMIN (INVENTARIO Y GERENCIA)
 # ==============================================================================
 if rol_actual == "Admin":
     with tab2:
@@ -401,20 +415,35 @@ if rol_actual == "Admin":
                 
                 with st.expander("Registrar Gasto"):
                     c1, c2, c3 = st.columns(3)
-                    d = c1.text_input("Detalle"); m = c2.number_input("Monto"); o = c3.selectbox("Origen", ["Efectivo", "QR"])
+                    d = c1.text_input("Detalle"); m = c2.number_input("Monto", value=None, placeholder="0"); o = c3.selectbox("Origen", ["Efectivo", "QR"])
                     if st.button("Registrar", key="btn_gasto_admin"):
-                        if m > 0:
+                        if m and m > 0:
                             n = pd.DataFrame([{'Fecha': get_bolivia_time(), 'Detalle': f"[ADMIN] {d}", 'Tipo': "Egreso", 'Monto': -m, 'MetodoPago': o, 'Ganancia': -m, 'Usuario': user_id, 'Sucursal': sucursal_actual}])
                             st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                             backend.guardar_data(sheet, "finanzas", st.session_state['finanzas']); st.rerun()
+        
         with g2:
-             st.write("Gestión de Usuarios")
-             with st.expander("➕ Usuario"):
-                with st.form("new_u"):
-                    u, p, n, r, s = st.text_input("User"), st.text_input("Pass"), st.text_input("Nombre"), st.selectbox("Rol", ["Vendedor", "Admin"]), st.text_input("Sucursal", "Matriz")
-                    if st.form_submit_button("Crear"):
-                        nuevo = pd.DataFrame([{'Usuario': u, 'Password': p, 'Nombre': n, 'Rol': r, 'Sucursal': s, 'Activo': 'TRUE'}])
-                        st.session_state['usuarios'] = pd.concat([st.session_state['usuarios'], nuevo], ignore_index=True)
-                        backend.guardar_data(sheet, "usuarios", st.session_state['usuarios']); st.success("Creado"); time.sleep(1); st.rerun()
-             df_u_ed = st.data_editor(st.session_state['usuarios'], num_rows="dynamic")
-             if st.button("Guardar Users"): st.session_state['usuarios'] = df_u_ed; backend.guardar_data(sheet, "usuarios", st.session_state['usuarios']); st.rerun()
+            st.subheader("Gestión de Equipo")
+            with st.expander("➕ Crear Nuevo Usuario"):
+                with st.form("new_user_form"):
+                    u_user = st.text_input("Usuario (Login)")
+                    u_pass = st.text_input("Contraseña")
+                    u_name = st.text_input("Nombre Completo")
+                    u_rol = st.selectbox("Rol", ["Vendedor", "Admin"])
+                    u_suc = st.text_input("Sucursal", value="Matriz")
+                    if st.form_submit_button("Crear Usuario"):
+                        if u_user and u_pass:
+                            new_u = pd.DataFrame([{'Usuario': u_user, 'Password': u_pass, 'Nombre': u_name, 'Rol': u_rol, 'Sucursal': u_suc, 'Activo': 'TRUE'}])
+                            st.session_state['usuarios'] = pd.concat([st.session_state['usuarios'], new_u], ignore_index=True)
+                            backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
+                            st.success("Usuario Creado"); time.sleep(1); st.rerun()
+                        else: st.error("Faltan datos")
+            
+            st.divider()
+            st.write("Editar Usuarios existentes (Marca 'FALSE' en Activo para despedir):")
+            df_users_ed = st.data_editor(st.session_state['usuarios'], num_rows="dynamic", use_container_width=True, key="users_editor_final")
+            
+            if st.button("💾 Guardar Usuarios", key="btn_save_users_final"):
+                st.session_state['usuarios'] = df_users_ed
+                backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
+                st.success("Usuarios Actualizados"); time.sleep(1); st.rerun()
