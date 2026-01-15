@@ -104,7 +104,7 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v5.2 | Excel Fix")
+    st.caption("MeatOS v5.3 | Stock Alert")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -150,17 +150,30 @@ with tab1:
             if prod_sel:
                 data = df_prod[df_prod['Producto'] == prod_sel].iloc[0]
                 precio_base = float(data['PrecioVenta'])
+                stock_actual = float(data.get('StockActual',0.0)) # Convertir a float para comparar
+
                 with st.container(border=True):
                     check = st.checkbox("🔓 Modificar Precio", key="check_precio_manual")
                     precio_final = st.number_input("Precio Venta", value=precio_base, step=0.5, key="input_precio_final") if check else precio_base
-                    st.metric("Stock Disp.", f"{float(data.get('StockActual',0.0)):.3f} Kg")
+                    
+                    # --- SEMÁFORO DE STOCK (VISUAL) ---
+                    c_stock1, c_stock2 = st.columns([1, 2])
+                    c_stock1.metric("Stock Disp.", f"{stock_actual:.3f} Kg")
+                    
+                    with c_stock2:
+                        if stock_actual <= 2.0:
+                            st.error(f"🚨 **CRÍTICO**: Queda muy poco.")
+                        elif stock_actual <= 10.0:
+                            st.warning(f"⚠️ **BAJO**: Reponer pronto.")
+                        else:
+                            st.success(f"✅ **OK**: Stock saludable.")
                 
                 gr = st.number_input("Gramos", 0, step=10, key=f"peso_{st.session_state['reset_counter']}", label_visibility="collapsed")
                 kg = gr / 1000
                 if kg > 0: st.info(f"Total: **{(precio_final*kg):.2f} Bs** ({kg:.3f} Kg)")
                 
                 if st.button("AGREGAR ➕", type="primary", key="btn_add_carrito"):
-                    if gr > 0 and kg <= float(data.get('StockActual',0.0)):
+                    if gr > 0 and kg <= stock_actual:
                         st.session_state['carrito'].append({
                             "Producto": prod_sel, "Categoria": str(data.get('Categoria','Gen')), "Cantidad": kg,
                             "PrecioUnit": precio_final, "CostoUnit": float(data.get('Costo',0.0)), "Subtotal": precio_final*kg
@@ -275,7 +288,32 @@ with tab1:
 if rol_actual == "Admin":
     with tab2:
         st.header("📦 Inventario")
-        with st.expander("➕ Nuevo Producto", expanded=True):
+        
+        # --- NUEVO: PANEL DE ALERTAS DE STOCK ---
+        df_inv = st.session_state['productos'].copy()
+        df_inv['StockActual'] = pd.to_numeric(df_inv['StockActual'], errors='coerce').fillna(0.0)
+        
+        # Filtrar productos críticos (< 5 kg) y bajos (< 15 kg)
+        criticos = df_inv[df_inv['StockActual'] <= 5.0]
+        bajos = df_inv[(df_inv['StockActual'] > 5.0) & (df_inv['StockActual'] <= 15.0)]
+        
+        if not criticos.empty or not bajos.empty:
+            st.markdown("### 🚨 Alertas de Reposición")
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                if not criticos.empty:
+                    st.error(f"🛑 **{len(criticos)} Productos Críticos** (Menos de 5kg)")
+                    st.dataframe(criticos[['Producto', 'StockActual']], use_container_width=True, hide_index=True)
+            with col_a2:
+                if not bajos.empty:
+                    st.warning(f"⚠️ **{len(bajos)} Productos Bajos** (Menos de 15kg)")
+                    st.dataframe(bajos[['Producto', 'StockActual']], use_container_width=True, hide_index=True)
+            st.divider()
+        else:
+            st.success("✅ Todo el inventario está en niveles saludables.")
+            st.divider()
+
+        with st.expander("➕ Nuevo Producto"):
             with st.form("alta", clear_on_submit=True):
                 c1, c2 = st.columns(2); n = c1.text_input("Nombre"); c = c2.selectbox("Cat", ["Res", "Pollo", "Cerdo", "Embutidos", "Otros"])
                 c3, c4, c5 = st.columns(3); pv = c3.number_input("P. Venta", 0.0); pc = c4.number_input("Costo", 0.0); s = c5.number_input("Stock", 0.0)
@@ -293,33 +331,27 @@ if rol_actual == "Admin":
         st.header("📊 Gerencia & Reportes")
         g_tab1, g_tab2 = st.tabs(["📈 FINANZAS", "👥 USUARIOS"])
         
-        # --- 1. FINANZAS ---
         with g_tab1:
             df_f = st.session_state['finanzas']
             if not df_f.empty and 'Ganancia' in df_f.columns:
                 df_f['Fecha_dt'] = pd.to_datetime(df_f['Fecha'], format="%Y-%m-%d %H:%M", errors='coerce')
                 df_f['Ganancia'] = pd.to_numeric(df_f['Ganancia'], errors='coerce').fillna(0.0)
                 
-                # 1. FILTRO
                 with st.container(border=True):
                     c_filtro1, c_filtro2 = st.columns([2, 1])
                     with c_filtro1:
                         today = datetime.utcnow() - timedelta(hours=4)
                         start_month = today.replace(day=1)
                         rango_fechas = st.date_input("Rango de Fechas:", value=(start_month, today), max_value=today, format="DD/MM/YYYY", key="filtro_gerencia")
-                    with c_filtro2:
-                        st.write(""); st.info("Selecciona 'Inicio' y 'Fin'.")
+                    with c_filtro2: st.write(""); st.info("Selecciona 'Inicio' y 'Fin'.")
                 
-                # 2. PROCESAMIENTO
                 if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
                     inicio, fin = rango_fechas
                     mask = (df_f['Fecha_dt'].dt.date >= inicio) & (df_f['Fecha_dt'].dt.date <= fin)
                     df_filtrado = df_f.loc[mask]
                     st.success(f"Mostrando: **{inicio.strftime('%d/%m/%Y')}** al **{fin.strftime('%d/%m/%Y')}**")
-                else:
-                    df_filtrado = df_f; st.warning("Mostrando histórico total.")
+                else: df_filtrado = df_f; st.warning("Mostrando histórico total.")
                 
-                # 3. KPIs
                 ganancia_periodo = df_filtrado['Ganancia'].sum()
                 efectivo_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('Efectivo', na=False, case=False)]['Monto'].sum()
                 banco_periodo = df_filtrado[df_filtrado['MetodoPago'].str.contains('QR', na=False, case=False) | df_f['MetodoPago'].str.contains('Banco', na=False, case=False)]['Monto'].sum()
@@ -333,7 +365,6 @@ if rol_actual == "Admin":
                 k4.metric("∑ TOTAL", f"{total_periodo:.2f} Bs", border=True)
                 st.divider()
 
-                # 4. TABLA Y DESCARGAS
                 c_table, c_export = st.columns([3, 1])
                 with c_table:
                     st.subheader("📒 Detalle")
@@ -342,15 +373,12 @@ if rol_actual == "Admin":
                 with c_export:
                     st.subheader("📂 Descargas")
                     df_dl = df_editor.drop(columns=['Fecha_dt'], errors='ignore')
-                    # AQUÍ ESTÁ EL ARREGLO DEL DECIMAL (Coma para Excel)
                     csv_filtrado = df_dl.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📥 Descargar Reporte", data=csv_filtrado, file_name="Reporte.csv", mime='text/csv', type="primary", key="btn_dl_1")
-                    
                     st.caption("Seguridad:")
                     csv_total = df_f.drop(columns=['Fecha_dt'], errors='ignore').to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📦 Backup Total", data=csv_total, file_name=f"BACKUP_{today.strftime('%Y%m%d')}.csv", mime='text/csv', key="btn_dl_2")
 
-                # 5. GUARDAR CAMBIOS
                 if st.button("💾 Guardar Cambios Tabla", key="btn_save_fin_final"):
                     indices_originales = df_filtrado.index
                     st.session_state['finanzas'] = st.session_state['finanzas'].drop(indices_originales)
@@ -360,15 +388,12 @@ if rol_actual == "Admin":
                     st.success("Base de datos actualizada."); time.sleep(1.5); st.rerun()
 
                 st.divider()
-                
-                # 6. REGISTRO MANUAL ADMIN
                 with st.container(border=True):
                     st.subheader("📝 Registrar Gasto/Ingreso Admin")
                     c1, c2 = st.columns(2)
                     desc = c1.text_input("Descripción", key="input_desc_admin_final") 
                     mont = c2.number_input("Monto", 0.0, key="input_monto_admin_final")
                     tipo = st.radio("Tipo", ["Egreso", "Ingreso"], horizontal=True, key="radio_tipo_admin_final")
-                    
                     if st.button("Registrar Movimiento", key="btn_reg_admin_final") and mont > 0:
                         s = -1 if tipo == "Egreso" else 1
                         n = pd.DataFrame([{
@@ -382,7 +407,6 @@ if rol_actual == "Admin":
             else:
                 st.info("Sin datos.")
 
-        # --- 2. USUARIOS ---
         with g_tab2:
             st.subheader("Gestión de Equipo")
             with st.expander("➕ Crear Nuevo Usuario"):
