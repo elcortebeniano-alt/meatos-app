@@ -16,8 +16,7 @@ styles.cargar_css()
 def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 def get_bolivia_date(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d")
 
-# --- FUNCIÓN TURBO: CACHE DE IMÁGENES ---
-# Esta función escanea el disco UNA VEZ y recuerda qué fotos existen.
+# --- CACHE DE IMÁGENES ---
 @st.cache_data
 def obtener_mapa_imagenes(lista_productos):
     mapa = {}
@@ -26,7 +25,7 @@ def obtener_mapa_imagenes(lista_productos):
         path_jpg = f"img/{prod}.jpg"
         if os.path.exists(path_png): mapa[prod] = path_png
         elif os.path.exists(path_jpg): mapa[prod] = path_jpg
-        else: mapa[prod] = None # No tiene foto
+        else: mapa[prod] = None 
     return mapa
 
 # 2. CONEXIÓN
@@ -34,7 +33,6 @@ if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.
 sheet = st.session_state['sheet_obj']
 
 if sheet:
-    # Carga de datos optimizada
     if 'finanzas' not in st.session_state: st.session_state['finanzas'] = backend.cargar_data(sheet, "finanzas", ['Fecha', 'Detalle', 'Tipo', 'Monto', 'MetodoPago', 'Ganancia', 'Usuario', 'Sucursal'])
     if 'productos' not in st.session_state: st.session_state['productos'] = backend.cargar_data(sheet, "productos", ['Producto', 'Costo', 'PrecioVenta', 'Categoria', 'StockActual'])
     if 'detalles' not in st.session_state: st.session_state['detalles'] = backend.cargar_data(sheet, "detalles", ['Fecha', 'Producto', 'Categoria', 'PesoKg', 'CostoUnit', 'PrecioVentaUnit', 'Subtotal', 'Ganancia', 'Usuario', 'Sucursal'])
@@ -43,15 +41,13 @@ if sheet:
 else:
     st.stop()
 
-# 3. VARIABLES DE ESTADO
+# 3. VARIABLES
 if 'carrito' not in st.session_state: st.session_state['carrito'] = []
 if 'ultimo_ticket' not in st.session_state: st.session_state['ultimo_ticket'] = None 
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
 if 'user_info' not in st.session_state: st.session_state['user_info'] = None
 if 'producto_seleccionado' not in st.session_state: st.session_state['producto_seleccionado'] = None 
 
-# PRE-CALCULO DE IMAGENES (AQUI ESTA LA MAGIA DE VELOCIDAD)
-# Solo se ejecuta si cambia la lista de productos
 if not st.session_state['productos'].empty:
     mapa_imgs = obtener_mapa_imagenes(st.session_state['productos']['Producto'].unique())
 else:
@@ -106,7 +102,7 @@ with st.sidebar:
         st.session_state['user_info'] = None
         st.rerun()
     st.markdown("---")
-    st.caption("MeatOS v7.2 | Turbo Cache")
+    st.caption("MeatOS v7.3 | Units & Weight")
 
 if rol_actual == "Admin":
     tab1, tab2, tab3 = st.tabs(["🛒 PUNTO DE VENTA", "📦 INVENTARIO", "📊 GERENCIA"])
@@ -114,7 +110,7 @@ else:
     tab1, = st.tabs(["🛒 PUNTO DE VENTA"])
 
 # ==============================================================================
-# PESTAÑA 1: VENTA (VISUAL TURBO)
+# PESTAÑA 1: VENTA (VISUAL)
 # ==============================================================================
 with tab1:
     with st.expander("💸 Caja Chica / Gastos Menores"):
@@ -136,7 +132,7 @@ with tab1:
 
     col_catalogo, col_operacion = st.columns([1.6, 1.4], gap="medium")
 
-    # >>> COLUMNA IZQUIERDA: CATALOGO VISUAL <<<
+    # >>> COLUMNA IZQUIERDA: CATALOGO <<<
     with col_catalogo:
         st.subheader("🥩 Catálogo")
         df_prod = st.session_state['productos']
@@ -148,14 +144,11 @@ with tab1:
             for i, cat in enumerate(categorias):
                 with tabs_cat[i]:
                     prods_cat = df_prod[df_prod['Categoria'] == cat]
-                    # Grid 3 columnas
                     cols = st.columns(3)
                     for idx, (index, row) in enumerate(prods_cat.iterrows()):
                         with cols[idx % 3]:
                             nombre_prod = row['Producto']
-                            # USA EL MAPA DE CACHE, NO VUELVE A LEER DISCO
                             img_path = mapa_imgs.get(nombre_prod)
-                            
                             if img_path: st.image(img_path, use_container_width=True)
                             else: st.markdown(f"<div style='text-align:center;font-size:40px;background:#f0f2f6;border-radius:10px;padding:10px;'>🥩</div>", unsafe_allow_html=True)
                             
@@ -166,33 +159,55 @@ with tab1:
         else:
             st.warning("No hay productos cargados en Inventario.")
 
-    # >>> COLUMNA DERECHA: PROCESAR PESO Y CARRITO <<<
+    # >>> COLUMNA DERECHA: PROCESAR <<<
     with col_operacion:
-        # 1. ZONA DE PESAJE
+        # 1. ZONA DE PESAJE / CANTIDAD
         if st.session_state['producto_seleccionado']:
             st.info(f"🔹 Seleccionado: **{st.session_state['producto_seleccionado']}**")
             data_sel = df_prod[df_prod['Producto'] == st.session_state['producto_seleccionado']].iloc[0]
             precio_base = float(data_sel['PrecioVenta'])
             stock_actual = float(data_sel.get('StockActual', 0.0))
+            categoria_prod = str(data_sel.get('Categoria', '')).lower()
             
-            if stock_actual <= 2.0: st.error(f"🚨 Stock Crítico: {stock_actual:.3f} Kg")
-            elif stock_actual <= 10.0: st.warning(f"⚠️ Stock Bajo: {stock_actual:.3f} Kg")
-            else: st.success(f"✅ Stock: {stock_actual:.3f} Kg")
+            # --- DETECCIÓN INTELIGENTE DE MODO ---
+            # Si es Extras, Bebidas o Carbon, sugerimos Unidad por defecto
+            es_extra = "extra" in categoria_prod or "carbon" in categoria_prod or "bebida" in categoria_prod
+            
+            # Selector de Modo (Peso vs Unidad)
+            modo_venta = st.radio("Modo de Venta:", ["⚖️ Peso (Gramos)", "📦 Unidad (Cant)"], index=1 if es_extra else 0, horizontal=True)
             
             c_p1, c_p2 = st.columns(2)
             check_precio = c_p1.checkbox("Mod. Precio")
-            precio_final = c_p2.number_input("Precio", value=precio_base, step=0.5) if check_precio else precio_base
+            precio_final = c_p2.number_input("Precio/Unit", value=precio_base, step=0.5) if check_precio else precio_base
             
-            gr = st.number_input("⚖️ PESO (Gramos)", min_value=0, step=10, key=f"peso_input_{st.session_state['reset_counter']}")
-            kg = gr / 1000
+            cantidad_final = 0.0
             
-            if kg > 0:
-                st.markdown(f"### Total: {precio_final*kg:.2f} Bs")
+            # INPUT SEGÚN MODO
+            if "Peso" in modo_venta:
+                # MODO PESO (Carne)
+                if stock_actual <= 2.0: st.error(f"🚨 Stock Crítico: {stock_actual:.3f} Kg")
+                else: st.success(f"✅ Stock: {stock_actual:.3f} Kg")
+                
+                gr = st.number_input("⚖️ PESO (Gramos)", min_value=0, step=10, key=f"peso_input_{st.session_state['reset_counter']}")
+                cantidad_final = gr / 1000
+                st.caption(f"Equivale a {cantidad_final:.3f} Kg")
+            else:
+                # MODO UNIDAD (Extras)
+                if stock_actual <= 5.0: st.warning(f"⚠️ Quedan {int(stock_actual)} Unidades")
+                else: st.success(f"✅ Stock: {int(stock_actual)} Unidades")
+                
+                unidades = st.number_input("📦 CANTIDAD (Unidades)", min_value=0, step=1, key=f"und_input_{st.session_state['reset_counter']}")
+                cantidad_final = float(unidades)
+
+            if cantidad_final > 0:
+                st.markdown(f"### Total: {precio_final*cantidad_final:.2f} Bs")
                 if st.button("AGREGAR AL CARRITO 🛒", type="primary", use_container_width=True):
-                    if kg <= stock_actual:
+                    if cantidad_final <= stock_actual:
                         st.session_state['carrito'].append({
-                            "Producto": data_sel['Producto'], "Categoria": str(data_sel.get('Categoria','Gen')), "Cantidad": kg, 
-                            "PrecioUnit": precio_final, "CostoUnit": float(data_sel.get('Costo',0.0)), "Subtotal": precio_final*kg
+                            "Producto": data_sel['Producto'], "Categoria": str(data_sel.get('Categoria','Gen')), 
+                            "Cantidad": cantidad_final, 
+                            "PrecioUnit": precio_final, "CostoUnit": float(data_sel.get('Costo',0.0)), 
+                            "Subtotal": precio_final*cantidad_final
                         })
                         st.session_state['reset_counter'] += 1
                         st.session_state['producto_seleccionado'] = None
@@ -327,7 +342,7 @@ if rol_actual == "Admin":
         
         with st.expander("➕ Nuevo Producto"):
             with st.form("alta", clear_on_submit=True):
-                c1, c2 = st.columns(2); n = c1.text_input("Nombre"); c = c2.selectbox("Cat", ["Res", "Pollo", "Cerdo", "Embutidos", "Otros"])
+                c1, c2 = st.columns(2); n = c1.text_input("Nombre"); c = c2.selectbox("Cat", ["Res", "Pollo", "Cerdo", "Embutidos", "Extras", "Otros"])
                 c3, c4, c5 = st.columns(3); pv = c3.number_input("P. Venta", 0.0); pc = c4.number_input("Costo", 0.0); s = c5.number_input("Stock", 0.0)
                 if st.form_submit_button("Guardar") and n:
                     nuevo = pd.DataFrame([{'Producto': n, 'Categoria': c, 'Costo': pc, 'PrecioVenta': pv, 'StockActual': s}])
@@ -364,7 +379,6 @@ if rol_actual == "Admin":
                     st.session_state['finanzas'] = df_editor
                     backend.guardar_data(sheet, "finanzas", df_editor); st.success("Ok"); time.sleep(1); st.rerun()
                 
-                # FIX: AGREGADO KEY UNICA
                 with st.expander("Registrar Gasto"):
                     c1, c2, c3 = st.columns(3)
                     d = c1.text_input("Detalle"); m = c2.number_input("Monto"); o = c3.selectbox("Origen", ["Efectivo", "QR"])
@@ -374,7 +388,6 @@ if rol_actual == "Admin":
                             st.session_state['finanzas'] = pd.concat([st.session_state['finanzas'], n], ignore_index=True)
                             backend.guardar_data(sheet, "finanzas", st.session_state['finanzas']); st.rerun()
         
-        # --- USUARIOS (RESTAURADO COMPLETO) ---
         with g2:
             st.subheader("Gestión de Equipo")
             with st.expander("➕ Crear Nuevo Usuario"):
@@ -391,11 +404,9 @@ if rol_actual == "Admin":
                             backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
                             st.success("Usuario Creado"); time.sleep(1); st.rerun()
                         else: st.error("Faltan datos")
-            
             st.divider()
             st.write("Editar Usuarios existentes (Marca 'FALSE' en Activo para despedir):")
             df_users_ed = st.data_editor(st.session_state['usuarios'], num_rows="dynamic", use_container_width=True, key="users_editor_final")
-            
             if st.button("💾 Guardar Usuarios", key="btn_save_users_final"):
                 st.session_state['usuarios'] = df_users_ed
                 backend.guardar_data(sheet, "usuarios", st.session_state['usuarios'])
