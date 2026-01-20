@@ -48,16 +48,18 @@ def obtener_mapa_imagenes(lista_productos):
         else: mapa[prod] = None 
     return mapa
 
-# --- CEREBRO IA (LISTA AMPLIADA) ---
+# --- CEREBRO IA (ACTUALIZADO A SERIE 2.0) ---
 def analizar_recibo_con_ia(image_file):
     img = Image.open(image_file)
     prompt = """
-    Extrae items en JSON: {"items":[{"producto":"", "peso_kg":0.0, "precio_unitario":0.0, "subtotal":0.0}], "total_pagado":0.0, "metodo_pago":"Efectivo"}
+    Analiza este recibo de venta. Extrae items en JSON estricto:
+    {"items":[{"producto":"", "peso_kg":0.0, "precio_unitario":0.0, "subtotal":0.0}], "total_pagado":0.0, "metodo_pago":"Efectivo"}
+    Si peso está en gramos, conviértelo a KG.
     """
     
-    # LISTA DE INTENTOS (Del más nuevo al más compatible)
-    # Agregamos 'gemini-pro-vision' (v1.0) que es muy estable
-    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+    # LISTA ACTUALIZADA SEGÚN TU ACCESO
+    # Prioridad: 2.0 Flash (Estable) -> 2.5 Flash (Nuevo) -> 1206 (Experimental)
+    modelos = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-exp-1206']
     
     errores = []
     
@@ -70,7 +72,7 @@ def analizar_recibo_con_ia(image_file):
             errores.append(f"{m_name}: {str(e)}")
             continue
             
-    st.error(f"❌ Fallaron todos. Versión Lib: {lib_version}. Detalles: {errores}")
+    st.error(f"❌ Error IA. Modelos probados: {modelos}. Detalles: {errores}")
     return None
 
 # --- LECTOR QR ---
@@ -154,18 +156,15 @@ user = st.session_state['user_info']
 with st.sidebar:
     if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", use_container_width=True)
     st.caption(f"👤 {user['Nombre']} | {user['Rol']}")
-    
     st.markdown("---")
-    st.caption(f"🤖 IA: v{lib_version}")
     
-    # --- BOTÓN REVELADOR DE MODELOS ---
-    if st.button("🔍 Ver Modelos Disponibles"):
+    # DIAGNOSTICO IA (MANTENIDO POR SI ACASO)
+    if st.button("🔍 Ver Modelos"):
         try:
             mods = genai.list_models()
             found = [m.name for m in mods if 'generateContent' in m.supported_generation_methods]
-            st.success(f"Disponibles: {found}")
-        except Exception as e:
-            st.error(f"Error listando: {e}")
+            st.success(f"OK: {found}")
+        except Exception as e: st.error(f"Err: {e}")
             
     modo_movil = st.toggle("📱 Modo Celular", False)
     if st.button("🔒 Salir"): st.session_state['user_info'] = None; st.rerun()
@@ -180,7 +179,7 @@ with tabs[1]:
     if up:
         st.image(up, width=300)
         if st.button("✨ ANALIZAR", type="primary"):
-            with st.spinner("🤖 Consultando..."):
+            with st.spinner("🤖 Leyendo con Gemini 2.0..."):
                 d = analizar_recibo_con_ia(up)
                 if d: st.session_state['datos_ia_pendientes'] = d; st.success("¡Leído!")
         
@@ -254,8 +253,7 @@ with tabs[0]:
         
         if st.session_state['carrito']:
             st.dataframe(pd.DataFrame(st.session_state['carrito']))
-            if st.button("Cobrar"): 
-                st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
+            if st.button("Cobrar"): st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
 
 if user['Rol'] == "Admin":
     with tabs[2]: st.data_editor(st.session_state['productos'], key="inv")
