@@ -19,22 +19,22 @@ import backend
 st.set_page_config(page_title="El Corte Beniano | POS", layout="wide", page_icon="🥩", initial_sidebar_state="collapsed")
 styles.cargar_css()
 
-# --- DIAGNÓSTICO DE VERSIÓN (CRUCIAL) ---
+# --- DIAGNÓSTICO DE VERSIÓN ---
 try:
     lib_version = genai.__version__
 except:
-    lib_version = "No instalada/Error"
+    lib_version = "Error"
 
 # --- CONFIGURACIÓN API ---
-api_msg = ""
+api_msg = "Desconocido"
 if "GOOGLE_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        api_msg = "✅ Configurada en Secrets"
+        api_msg = "✅ Configurada"
     except Exception as e:
-        api_msg = f"❌ Error Config: {e}"
+        api_msg = f"❌ Error: {e}"
 else:
-    api_msg = "⚠️ NO ENCONTRADA"
+    api_msg = "⚠️ Faltan Secrets"
 
 def get_bolivia_time(): return (datetime.utcnow() - timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
 
@@ -48,21 +48,30 @@ def obtener_mapa_imagenes(lista_productos):
         else: mapa[prod] = None 
     return mapa
 
-# --- CEREBRO IA (EXPERIMENTAL V3) ---
+# --- CEREBRO IA (LISTA AMPLIADA) ---
 def analizar_recibo_con_ia(image_file):
     img = Image.open(image_file)
     prompt = """
     Extrae items en JSON: {"items":[{"producto":"", "peso_kg":0.0, "precio_unitario":0.0, "subtotal":0.0}], "total_pagado":0.0, "metodo_pago":"Efectivo"}
     """
-    # Intentamos con el modelo más básico primero para probar conexión
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content([prompt, img])
-        return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-    except Exception as e:
-        st.error(f"Error Técnico IA: {e}")
-        st.warning(f"Versión de librería usada: {lib_version}")
-        return None
+    
+    # LISTA DE INTENTOS (Del más nuevo al más compatible)
+    # Agregamos 'gemini-pro-vision' (v1.0) que es muy estable
+    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+    
+    errores = []
+    
+    for m_name in modelos:
+        try:
+            model = genai.GenerativeModel(m_name)
+            response = model.generate_content([prompt, img])
+            return json.loads(response.text.replace("```json", "").replace("```", "").strip())
+        except Exception as e:
+            errores.append(f"{m_name}: {str(e)}")
+            continue
+            
+    st.error(f"❌ Fallaron todos. Versión Lib: {lib_version}. Detalles: {errores}")
+    return None
 
 # --- LECTOR QR ---
 def leer_qr_desde_imagen(image_file):
@@ -98,7 +107,7 @@ if 'sheet_obj' not in st.session_state: st.session_state['sheet_obj'] = backend.
 sheet = st.session_state['sheet_obj']
 if not sheet: st.stop()
 
-# CARGA DE DATOS
+# CARGA
 for k, cols in {'finanzas':['Fecha','Detalle','Tipo','Monto','MetodoPago','Ganancia','Usuario','Sucursal'], 
                 'productos':['Producto','Costo','PrecioVenta','Categoria','StockActual'], 
                 'detalles':['Fecha','Producto','Categoria','PesoKg','CostoUnit','PrecioVentaUnit','Subtotal','Ganancia','Usuario','Sucursal'],
@@ -106,7 +115,6 @@ for k, cols in {'finanzas':['Fecha','Detalle','Tipo','Monto','MetodoPago','Ganan
                 'clientes':['Telefono','Nombre','TotalGastado','UltimaCompra','Puntos']}.items():
     if k not in st.session_state: st.session_state[k] = backend.cargar_data(sheet, k, cols)
 
-# VARS
 for k in ['carrito','ultimo_ticket','user_info','producto_seleccionado','datos_ia_pendientes','msg_feedback']:
     if k not in st.session_state: st.session_state[k] = None
 if 'reset_counter' not in st.session_state: st.session_state['reset_counter'] = 0
@@ -129,9 +137,7 @@ if st.session_state['user_info'] is None:
         st.markdown("<br><br>", unsafe_allow_html=True)
         if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", width=200)
         st.title("🥩 MeatOS Login")
-        # Mostrar Versión en Login para debug rápido
-        st.caption(f"🔧 System Check: GenAI v{lib_version}")
-        
+        st.caption(f"🔧 Lib: v{lib_version}")
         with st.form("login_form"):
             u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Ingresar", type="primary"):
@@ -149,30 +155,34 @@ with st.sidebar:
     if os.path.exists("Logo-Final.png"): st.image("Logo-Final.png", use_container_width=True)
     st.caption(f"👤 {user['Nombre']} | {user['Rol']}")
     
-    # --- PANEL DE DIAGNOSTICO ---
-    st.markdown("### 🩺 Diagnóstico Técnico")
-    st.info(f"🤖 Librería IA: **{lib_version}**")
-    st.caption(f"🔑 Estado Key: {api_msg}")
+    st.markdown("---")
+    st.caption(f"🤖 IA: v{lib_version}")
     
+    # --- BOTÓN REVELADOR DE MODELOS ---
+    if st.button("🔍 Ver Modelos Disponibles"):
+        try:
+            mods = genai.list_models()
+            found = [m.name for m in mods if 'generateContent' in m.supported_generation_methods]
+            st.success(f"Disponibles: {found}")
+        except Exception as e:
+            st.error(f"Error listando: {e}")
+            
     modo_movil = st.toggle("📱 Modo Celular", False)
     if st.button("🔒 Salir"): st.session_state['user_info'] = None; st.rerun()
 
 if user['Rol'] == "Admin": tabs = st.tabs(["🛒 VENTA", "📥 IMPORTAR KYTE", "📦 INV", "📊 GERENCIA"])
 else: tabs = st.tabs(["🛒 VENTA", "📥 IMPORTAR KYTE"])
 
-# --- TAB IMPORTAR ---
+# --- IMPORTAR ---
 with tabs[1]:
     st.header("📥 Importar Kyte")
-    if lib_version < "0.7.0":
-        st.error(f"🛑 ALERTA CRÍTICA: Tu servidor tiene la versión {lib_version} de la IA. Necesitamos la 0.7.2. Por favor revisa el PASO 2 de abajo.")
-    
-    up = st.file_uploader("Recibo Kyte", type=['png','jpg','jpeg'])
+    up = st.file_uploader("Recibo", type=['png','jpg','jpeg'])
     if up:
         st.image(up, width=300)
         if st.button("✨ ANALIZAR", type="primary"):
-            with st.spinner("🤖 Consultando a Gemini..."):
+            with st.spinner("🤖 Consultando..."):
                 d = analizar_recibo_con_ia(up)
-                if d: st.session_state['datos_ia_pendientes'] = d; st.success("Leído")
+                if d: st.session_state['datos_ia_pendientes'] = d; st.success("¡Leído!")
         
         if st.session_state['datos_ia_pendientes']:
             datos = st.session_state['datos_ia_pendientes']
@@ -202,7 +212,7 @@ with tabs[1]:
                 backend.guardar_data(sheet, "finanzas", st.session_state['finanzas'])
                 st.success("Guardado!"); st.session_state['datos_ia_pendientes'] = None; time.sleep(2); st.rerun()
 
-# --- TAB VENTA (MANUAL + PISTOLA) ---
+# --- VENTA ---
 with tabs[0]:
     with st.container(border=True):
         st.caption("📷 ESCANEAR")
@@ -244,7 +254,8 @@ with tabs[0]:
         
         if st.session_state['carrito']:
             st.dataframe(pd.DataFrame(st.session_state['carrito']))
-            if st.button("Cobrar"): st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
+            if st.button("Cobrar"): 
+                st.session_state['carrito']=[]; st.success("Vendido"); st.rerun()
 
 if user['Rol'] == "Admin":
     with tabs[2]: st.data_editor(st.session_state['productos'], key="inv")
